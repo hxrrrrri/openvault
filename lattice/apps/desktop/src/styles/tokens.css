@@ -1,0 +1,57 @@
+:root {
+  --bg: #050507;
+  --bg-2: #0a0a0f;
+  --graphite: #111116;
+  --card: #17171d;
+  --card-2: #1c1c24;
+  --elevated: #202029;
+  --hairline: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --violet: #8b7cff;
+  --violet-2: #a99bff;
+  --violet-deep: #4b36b8;
+  --indigo: #6d8dff;
+  --mist: #d8d8e8;
+  --muted: #8f8fa3;
+  --muted-2: #5d5d70;
+  --danger: #ff4d5e;
+  --warning: #ffb45e;
+  --success: #65f2a8;
+
+  --text: #ececf4;
+  --text-2: #b7b7c6;
+  --text-3: #8f8fa3;
+  --text-4: #5d5d70;
+
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 24px;
+  --r-xl: 36px;
+
+  --t-fast: 120ms;
+  --t-normal: 220ms;
+  --t-slow: 420ms;
+  --ease-spring: cubic-bezier(0.22, 1.4, 0.36, 1);
+  --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  --shadow-inner:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-card:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 20px 40px -20px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-float:
+    0 30px 80px -20px rgba(0, 0, 0, 0.7),
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --glow-violet:
+    0 0 0 1px rgba(139, 124, 255, 0.35),
+    0 0 24px rgba(139, 124, 255, 0.35),
+    0 0 60px rgba(75, 54, 184, 0.35);
+  --glow-violet-soft:
+    0 0 0 1px rgba(139, 124, 255, 0.2),
+    0 0 18px rgba(139, 124, 255, 0.25);
+}

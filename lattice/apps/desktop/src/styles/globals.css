@@ -1,0 +1,256 @@
+@import "./tokens.css";
+@import "./animations.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-feature-settings:
+    "ss01",
+    "cv11";
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+  width: 100vw;
+}
+
+.mono {
+  font-family: "JetBrains Mono", "SF Mono", Consolas, ui-monospace, monospace;
+  font-feature-settings: "zero" 1;
+}
+
+.dot {
+  font-family: "JetBrains Mono", "SF Mono", Consolas, ui-monospace, monospace;
+  letter-spacing: 0.04em;
+}
+
+*::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.bg-ambient {
+  background:
+    radial-gradient(1200px 700px at 70% -10%, rgba(139, 124, 255, 0.1), transparent 60%),
+    radial-gradient(900px 600px at 10% 110%, rgba(109, 141, 255, 0.08), transparent 60%),
+    radial-gradient(700px 500px at 100% 100%, rgba(75, 54, 184, 0.12), transparent 60%),
+    var(--bg);
+  position: relative;
+}
+
+.bg-ambient::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+  content: "";
+  inset: 0;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  pointer-events: none;
+  position: absolute;
+}
+
+.glass {
+  backdrop-filter: blur(20px);
+  background: linear-gradient(180deg, rgba(28, 28, 36, 0.86), rgba(17, 17, 22, 0.86));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+.card {
+  background: linear-gradient(180deg, #1a1a22 0%, #14141a 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+}
+
+.card-inner {
+  background: #0e0e13;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--r-md);
+  box-shadow:
+    inset 0 2px 12px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.gradient-card {
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(139, 124, 255, 0.48), transparent 50%),
+    radial-gradient(120% 100% at 100% 100%, rgba(75, 54, 184, 0.56), transparent 55%),
+    linear-gradient(135deg, #1a1530 0%, #0e0e1a 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  position: relative;
+}
+
+.pixel-label {
+  color: var(--muted);
+  font-family: "JetBrains Mono", "SF Mono", Consolas, ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.divider {
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  height: 1px;
+}
+
+.divider-v {
+  background: linear-gradient(180deg, transparent, var(--border), transparent);
+  width: 1px;
+}
+
+.chip {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  display: inline-flex;
+  font-size: 11px;
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.chip-violet {
+  background: rgba(139, 124, 255, 0.08);
+  border-color: rgba(139, 124, 255, 0.3);
+  color: var(--violet-2);
+}
+
+.chip-success {
+  background: rgba(101, 242, 168, 0.06);
+  border-color: rgba(101, 242, 168, 0.3);
+  color: var(--success);
+}
+
+.chip-danger {
+  background: rgba(255, 77, 94, 0.06);
+  border-color: rgba(255, 77, 94, 0.3);
+  color: var(--danger);
+}
+
+.chip-warning {
+  background: rgba(255, 180, 94, 0.06);
+  border-color: rgba(255, 180, 94, 0.3);
+  color: var(--warning);
+}
+
+.row {
+  align-items: center;
+  border-radius: 8px;
+  color: var(--text-2);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 6px 10px;
+  transition: all var(--t-fast) var(--ease-soft);
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.row.active {
+  background: linear-gradient(90deg, rgba(139, 124, 255, 0.18), rgba(139, 124, 255, 0.02));
+  box-shadow: inset 2px 0 0 var(--violet);
+  color: var(--text);
+}
+
+.toggle {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+  height: 18px;
+  position: relative;
+  transition: all var(--t-fast) var(--ease-soft);
+  width: 30px;
+}
+
+.toggle::after {
+  background: linear-gradient(180deg, #e8e8f0, #b7b7c6);
+  border-radius: 50%;
+  content: "";
+  height: 14px;
+  left: 1px;
+  position: absolute;
+  top: 1px;
+  transition: all var(--t-normal) var(--ease-spring);
+  width: 14px;
+}
+
+.toggle.on {
+  background: linear-gradient(90deg, #6e5de8, #8b7cff);
+  border-color: rgba(139, 124, 255, 0.6);
+  box-shadow: 0 0 12px rgba(139, 124, 255, 0.4);
+}
+
+.toggle.on::after {
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+  left: 13px;
+}
+
+.absolute-fill {
+  inset: 0;
+  position: absolute;
+}
+
+.no-select {
+  user-select: none;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

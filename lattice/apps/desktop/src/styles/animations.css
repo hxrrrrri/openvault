@@ -1,0 +1,73 @@
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(139, 124, 255, 0.5),
+      0 0 18px rgba(139, 124, 255, 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(139, 124, 255, 0),
+      0 0 30px rgba(139, 124, 255, 0.6);
+  }
+}
+
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    filter: blur(8px);
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    filter: blur(0);
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.anim-fade-up {
+  animation: fade-up var(--t-normal) var(--ease-spring);
+}
+
+.anim-scale-in {
+  animation: scale-in var(--t-normal) var(--ease-spring);
+}
+
+.pulse {
+  animation: pulse-glow 2.4s var(--ease-soft) infinite;
+}
+
+.float {
+  animation: float-y 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

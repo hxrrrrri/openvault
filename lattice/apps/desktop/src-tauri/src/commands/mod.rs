@@ -1,0 +1,17 @@
+pub mod ai_commands;
+pub mod collection_commands;
+pub mod graph_commands;
+pub mod health_commands;
+pub mod note_commands;
+pub mod plugin_commands;
+pub mod search_commands;
+pub mod vault_commands;
+
+pub use ai_commands::*;
+pub use collection_commands::*;
+pub use graph_commands::*;
+pub use health_commands::*;
+pub use note_commands::*;
+pub use plugin_commands::*;
+pub use search_commands::*;
+pub use vault_commands::*;

@@ -1,0 +1,32 @@
+{
+  "name": "lattice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source local-first Markdown knowledge graph IDE.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm desktop:dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "prettier --write .",
+    "typecheck": "turbo run typecheck",
+    "desktop:dev": "pnpm --filter @lattice/desktop tauri:dev",
+    "desktop:web": "pnpm --filter @lattice/desktop dev",
+    "desktop:build": "pnpm --filter @lattice/desktop tauri:build",
+    "rust:test": "cargo test --workspace",
+    "rust:fmt": "cargo fmt --all",
+    "rust:clippy": "cargo clippy --workspace --all-targets -- -D warnings",
+    "bench:vault": "tsx scripts/benchmark-vault.ts",
+    "sample:vault": "tsx scripts/generate-sample-vault.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

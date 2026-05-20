@@ -1,0 +1,15 @@
+{
+  "id": "sample-command",
+  "name": "Sample Command",
+  "version": "0.1.0",
+  "description": "Registers one command and reads the active note title.",
+  "author": "LATTICE contributors",
+  "main": "dist/main.js",
+  "permissions": {
+    "vault": ["read"],
+    "commands": ["register"],
+    "ui": ["status-bar"],
+    "network": [],
+    "secrets": []
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "sample-lattice-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@lattice/plugin-api": "workspace:*"
+  }
+}
