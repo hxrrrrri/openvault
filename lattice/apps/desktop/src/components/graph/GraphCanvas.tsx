@@ -35,6 +35,14 @@ interface SimLink extends SimulationLinkDatum<SimNode> {
   weight: number;
 }
 
+interface NodeMotion {
+  ox: number;
+  oy: number;
+  vx: number;
+  vy: number;
+  phase: number;
+}
+
 interface ViewState {
   tx: number;
   ty: number;
@@ -56,6 +64,12 @@ const NODE_NEAR_SWAY_PX = 90;
 const SWAY_SPRING = 0.042;
 const SWAY_DAMPING = 0.87;
 const SWAY_MOUSE_FORCE = 0.07;
+const NODE_HOVER_MOTION_RADIUS_PX = 150;
+const NODE_HOVER_MOTION_MAX_PX = 10;
+const NODE_HOVER_PUSH = 0.11;
+const NODE_HOVER_DRIFT = 0.045;
+const NODE_HOVER_SPRING = 0.035;
+const NODE_HOVER_DAMPING = 0.88;
 
 export function GraphCanvas({
   graph,
@@ -82,6 +96,7 @@ export function GraphCanvas({
   const graphSettingsRef = useRef({ nodeScale: 1, edgeScale: 1, showArrows: true });
   const hoverLockRef = useRef<string | null>(null);
   const swayStateRef = useRef({ ox: 0, oy: 0, vx: 0, vy: 0 });
+  const nodeMotionRef = useRef<Map<string, NodeMotion>>(new Map());
   const mousePosRef = useRef<{ sx: number; sy: number } | null>(null);
   const prevMousePosRef = useRef<{ sx: number; sy: number } | null>(null);
 
@@ -344,6 +359,14 @@ export function GraphCanvas({
           sway.ox = clamp(sway.ox + sway.vx, -SWAY_MAX_PX, SWAY_MAX_PX);
           sway.oy = clamp(sway.oy + sway.vy, -SWAY_MAX_PX, SWAY_MAX_PX);
           prevMousePosRef.current = mouse ? { sx: mouse.sx, sy: mouse.sy } : null;
+          updateNodeMotion(
+            simNodesRef.current,
+            nodeMotionRef.current,
+            mouse && !pointerRef.current ? mouse : null,
+            worldToScreen,
+            sway,
+            timeRef.current,
+          );
 
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.clearRect(0, 0, size.w, size.h);
@@ -374,6 +397,7 @@ export function GraphCanvas({
             selectedIdRef.current,
             hoveredIdRef.current,
             edgeAlphaRef.current,
+            nodeMotionRef.current,
             worldToScreen,
             graphSettingsRef.current.edgeScale,
             graphSettingsRef.current.showArrows,
@@ -384,6 +408,7 @@ export function GraphCanvas({
             selectedIdRef.current,
             hoveredIdRef.current,
             nodeAlphaRef.current,
+            nodeMotionRef.current,
             worldToScreen,
             viewRef.current.scale,
             timeRef.current,
@@ -682,12 +707,83 @@ function drawBackground(ctx: CanvasRenderingContext2D, size: { w: number; h: num
   ctx.fillRect(0, 0, size.w, size.h);
 }
 
+function updateNodeMotion(
+  nodes: SimNode[],
+  motionById: Map<string, NodeMotion>,
+  mouse: { sx: number; sy: number } | null,
+  worldToScreen: (x: number, y: number) => { x: number; y: number },
+  sway: { ox: number; oy: number },
+  time: number,
+) {
+  const liveIds = new Set<string>();
+
+  for (const node of nodes) {
+    liveIds.add(node.id);
+    let motion = motionById.get(node.id);
+    if (!motion) {
+      motion = { ox: 0, oy: 0, vx: 0, vy: 0, phase: phaseFor(node.id) };
+      motionById.set(node.id, motion);
+    }
+
+    let influence = 0;
+    let ux = 0;
+    let uy = 0;
+    if (mouse) {
+      const p = worldToScreen(node.x ?? 0, node.y ?? 0);
+      const dx = p.x + sway.ox - mouse.sx;
+      const dy = p.y + sway.oy - mouse.sy;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      influence = Math.pow(clamp(1 - dist / NODE_HOVER_MOTION_RADIUS_PX, 0, 1), 1.7);
+      ux = dx / dist;
+      uy = dy / dist;
+    }
+
+    const pinFactor = node.pinned ? 0.35 : 1;
+    if (influence > 0) {
+      const driftX = Math.cos(time * 2.1 + motion.phase);
+      const driftY = Math.sin(time * 1.8 + motion.phase * 1.37);
+      motion.vx += (ux * NODE_HOVER_PUSH + driftX * NODE_HOVER_DRIFT) * influence * pinFactor;
+      motion.vy += (uy * NODE_HOVER_PUSH + driftY * NODE_HOVER_DRIFT) * influence * pinFactor;
+    }
+
+    motion.vx -= motion.ox * NODE_HOVER_SPRING;
+    motion.vy -= motion.oy * NODE_HOVER_SPRING;
+    motion.vx *= NODE_HOVER_DAMPING;
+    motion.vy *= NODE_HOVER_DAMPING;
+    motion.ox = clamp(motion.ox + motion.vx, -NODE_HOVER_MOTION_MAX_PX, NODE_HOVER_MOTION_MAX_PX);
+    motion.oy = clamp(motion.oy + motion.vy, -NODE_HOVER_MOTION_MAX_PX, NODE_HOVER_MOTION_MAX_PX);
+
+    if (!mouse && Math.abs(motion.ox) < 0.01 && Math.abs(motion.oy) < 0.01) {
+      motion.ox = 0;
+      motion.oy = 0;
+      motion.vx = 0;
+      motion.vy = 0;
+    }
+  }
+
+  for (const id of motionById.keys()) {
+    if (!liveIds.has(id)) motionById.delete(id);
+  }
+}
+
+function withMotion(point: { x: number; y: number }, motion: NodeMotion | undefined) {
+  if (!motion) return point;
+  return { x: point.x + motion.ox, y: point.y + motion.oy };
+}
+
+function phaseFor(id: string) {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) hash = (hash * 33 + id.charCodeAt(index)) | 0;
+  return (Math.abs(hash) % 628) / 100;
+}
+
 function drawEdges(
   ctx: CanvasRenderingContext2D,
   links: SimLink[],
   selectedId: string | null,
   hoveredId: string | null,
   edgeAlpha: Map<string, number>,
+  nodeMotion: Map<string, NodeMotion>,
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   edgeScale: number,
   showArrows: boolean,
@@ -696,8 +792,8 @@ function drawEdges(
     const sourceNode = link.source as SimNode;
     const targetNode = link.target as SimNode;
     if (!sourceNode || !targetNode) continue;
-    const a = worldToScreen(sourceNode.x ?? 0, sourceNode.y ?? 0);
-    const b = worldToScreen(targetNode.x ?? 0, targetNode.y ?? 0);
+    const a = withMotion(worldToScreen(sourceNode.x ?? 0, sourceNode.y ?? 0), nodeMotion.get(sourceNode.id));
+    const b = withMotion(worldToScreen(targetNode.x ?? 0, targetNode.y ?? 0), nodeMotion.get(targetNode.id));
     const active = sourceNode.id === selectedId || targetNode.id === selectedId;
     const hovered = sourceNode.id === hoveredId || targetNode.id === hoveredId;
     const focusAlpha = edgeAlpha.get(link.id) ?? 1;
@@ -770,6 +866,7 @@ function drawNodes(
   selectedId: string | null,
   hoveredId: string | null,
   nodeAlpha: Map<string, number>,
+  nodeMotion: Map<string, NodeMotion>,
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   scale: number,
   time: number,
@@ -779,7 +876,7 @@ function drawNodes(
   for (const node of nodes) {
     const selected = node.id === selectedId;
     const hovered = node.id === hoveredId;
-    const p = worldToScreen(node.x ?? 0, node.y ?? 0);
+    const p = withMotion(worldToScreen(node.x ?? 0, node.y ?? 0), nodeMotion.get(node.id));
     const focusAlpha = nodeAlpha.get(node.id) ?? 1;
     const baseRadius = radiusFor(node);
     const pulse = selected ? 1 + Math.sin(time * 2.6) * 0.06 : hovered ? 1.14 : 1;

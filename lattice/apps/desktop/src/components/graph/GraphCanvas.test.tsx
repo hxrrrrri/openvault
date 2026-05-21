@@ -33,6 +33,9 @@ Object.defineProperty(window, "ResizeObserver", {
 
 HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   setTransform: vi.fn(),
+  save: vi.fn(),
+  restore: vi.fn(),
+  translate: vi.fn(),
   clearRect: vi.fn(),
   createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
   fillRect: vi.fn(),
