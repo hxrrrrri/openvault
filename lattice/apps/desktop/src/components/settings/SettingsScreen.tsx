@@ -16,6 +16,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { GlowCard } from "@/components/ui/GlowCard";
 import { PluginMarketplace } from "@/components/plugins/PluginMarketplace";
+import { HotkeyEditor } from "@/features/hotkeys/HotkeyEditor";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { EditorMode } from "@/types/domain";
@@ -154,6 +155,19 @@ function AppearanceSettings() {
           ]}
           onChange={(density) => setAppearance({ density })}
         />
+        <SelectRow
+          label="Color scheme"
+          value={appearance.colorScheme}
+          options={[
+            ["auto", "Adapt to system"],
+            ["light", "Light"],
+            ["dark", "Dark"],
+          ]}
+          onChange={(colorScheme) => setAppearance({ colorScheme })}
+        />
+        <ToggleRow label="Show ribbon" description="Show the vertical ribbon on the far left of the window." checked={appearance.showRibbon} onChange={(showRibbon) => setAppearance({ showRibbon })} />
+        <ToggleRow label="Show tab title bar" description="Show the tab strip at the top of each editor pane." checked={appearance.showTabTitleBar} onChange={(showTabTitleBar) => setAppearance({ showTabTitleBar })} />
+        <ToggleRow label="Show view header" description="Show the small per-pane action header (navigation arrows, three-dot menu)." checked={appearance.showViewHeader} onChange={(showViewHeader) => setAppearance({ showViewHeader })} />
         <InfoRow label="CSS snippets" value="Theme snippets are loaded from .lattice/themes in the desktop runtime." />
       </SettingGrid>
     </SettingsSection>
@@ -181,6 +195,15 @@ function EditorSettings() {
           }}
         />
         <SelectRow
+          label="Default editing mode"
+          value={editor.defaultEditingMode}
+          options={[
+            ["live-preview", "Live Preview"],
+            ["source", "Source"],
+          ]}
+          onChange={(defaultEditingMode) => setEditor({ defaultEditingMode })}
+        />
+        <SelectRow
           label="Properties display"
           value={editor.propertiesDisplay}
           options={[
@@ -190,14 +213,25 @@ function EditorSettings() {
           ]}
           onChange={(propertiesDisplay) => setEditor({ propertiesDisplay })}
         />
+        <ToggleRow label="Show inline title" description="Show the filename as an editable H1 above the note body." checked={editor.showInlineTitle} onChange={(showInlineTitle) => setEditor({ showInlineTitle })} />
+        <ToggleRow label="Show editor status" description="Show 'live preview / source' chip and autosave indicator above the editor." checked={editor.showEditorStatus} onChange={(showEditorStatus) => setEditor({ showEditorStatus })} />
         <ToggleRow label="Readable line length" description="Constrain editor width for long-form writing." checked={editor.readableLineLength} onChange={(readableLineLength) => setEditor({ readableLineLength })} />
+        <ToggleRow label="Strict line breaks" description="Treat single newlines as hard breaks (matches GitHub-flavored Markdown)." checked={editor.strictLineBreaks} onChange={(strictLineBreaks) => setEditor({ strictLineBreaks })} />
+        <ToggleRow label="Fold heading" description="Show fold controls in the gutter next to headings." checked={editor.foldHeading} onChange={(foldHeading) => setEditor({ foldHeading })} />
+        <ToggleRow label="Fold indent" description="Allow collapsing indented blocks (nested lists)." checked={editor.foldIndent} onChange={(foldIndent) => setEditor({ foldIndent })} />
+        <ToggleRow label="Indentation guides" description="Draw subtle vertical lines for each indentation level." checked={editor.showIndentationGuides} onChange={(showIndentationGuides) => setEditor({ showIndentationGuides })} />
+        <ToggleRow label="Right-to-left" description="Render the editor in RTL for Arabic / Hebrew / Persian / Urdu." checked={editor.rtl} onChange={(rtl) => setEditor({ rtl })} />
         <ToggleRow label="Line numbers" description="Show editor gutter line numbers." checked={editor.lineNumbers} onChange={(lineNumbers) => setEditor({ lineNumbers })} />
         <ToggleRow label="Line wrapping" description="Wrap long Markdown lines inside the editor." checked={editor.lineWrapping} onChange={(lineWrapping) => setEditor({ lineWrapping })} />
         <ToggleRow label="Spell check" description="Ask the browser engine to spell-check note text." checked={editor.spellCheck} onChange={(spellCheck) => setEditor({ spellCheck })} />
-        <ToggleRow label="Auto-pair Markdown" description="Close brackets, quotes, code ticks, and emphasis marks." checked={editor.autoPairMarkdown} onChange={(autoPairMarkdown) => setEditor({ autoPairMarkdown })} />
-        <ToggleRow label="Smart list indent" description="Keep list indentation predictable while editing." checked={editor.smartListIndent} onChange={(smartListIndent) => setEditor({ smartListIndent })} />
+        <TextRow label="Spellcheck languages (comma-separated)" value={editor.spellcheckLanguages.join(", ")} onChange={(value) => setEditor({ spellcheckLanguages: value.split(",").map((s) => s.trim()).filter(Boolean) })} />
+        <ToggleRow label="Auto-pair brackets" description={`Close (), [], {}, '', "" automatically.`} checked={editor.autoPairBrackets} onChange={(autoPairBrackets) => setEditor({ autoPairBrackets })} />
+        <ToggleRow label="Auto-pair Markdown" description="Close *, _, `, =, ~ automatically." checked={editor.autoPairMarkdown} onChange={(autoPairMarkdown) => setEditor({ autoPairMarkdown })} />
+        <ToggleRow label="Smart list indent" description="Tab/Shift-Tab indent list items; Enter on empty item exits." checked={editor.smartListIndent} onChange={(smartListIndent) => setEditor({ smartListIndent })} />
         <ToggleRow label="Indent using tabs" description="Use tab characters instead of spaces." checked={editor.indentWithTabs} onChange={(indentWithTabs) => setEditor({ indentWithTabs })} />
         <RangeRow label="Tab size" min={2} max={8} step={1} value={editor.tabSize} onChange={(tabSize) => setEditor({ tabSize })} />
+        <ToggleRow label="Auto-convert pasted HTML" description="Convert pasted HTML into Markdown when supported." checked={editor.autoConvertHtml} onChange={(autoConvertHtml) => setEditor({ autoConvertHtml })} />
+        <ToggleRow label="Vim mode" description="Requires @replit/codemirror-vim package — install to activate." checked={editor.vimMode} onChange={(vimMode) => setEditor({ vimMode })} />
       </SettingGrid>
     </SettingsSection>
   );
@@ -228,8 +262,20 @@ function FilesSettings() {
             ["same-folder", "Same folder"],
             ["inbox", "Inbox"],
             ["vault", "Vault root"],
+            ["custom", "Custom folder"],
           ]}
           onChange={(defaultNoteLocation) => setFiles({ defaultNoteLocation })}
+        />
+        <TextRow label="New note folder (when custom)" value={files.newNoteFolder} onChange={(newNoteFolder) => setFiles({ newNoteFolder })} />
+        <SelectRow
+          label="Attachment deletion"
+          value={files.attachmentDeletePolicy}
+          options={[
+            ["ask", "Ask every time"],
+            ["always", "Always delete linked attachments"],
+            ["never", "Never delete attachments"],
+          ]}
+          onChange={(attachmentDeletePolicy) => setFiles({ attachmentDeletePolicy })}
         />
         <SelectRow
           label="Link format"
@@ -241,6 +287,7 @@ function FilesSettings() {
           onChange={(linkFormat) => setFiles({ linkFormat })}
         />
         <TextRow label="Attachment folder" value={files.attachmentFolder} onChange={(attachmentFolder) => setFiles({ attachmentFolder })} />
+        <ToggleRow label="Detect all file extensions" description="Show non-Markdown files (zip, docx, etc.) in the file tree." checked={files.detectAllFileExtensions} onChange={(detectAllFileExtensions) => setFiles({ detectAllFileExtensions })} />
       </SettingGrid>
       <GlowCard className="mt-4 p-5">
         <div className="pixel-label text-[10px]">Excluded files</div>
@@ -335,12 +382,7 @@ function SearchSettings() {
 function KeyboardSettings() {
   return (
     <SettingsSection eyebrow="Keyboard" title="Hotkeys">
-      <SettingGrid>
-        <InfoRow label="Command palette" value="Ctrl/Cmd K" />
-        <InfoRow label="Save active note" value="Ctrl/Cmd S" />
-        <InfoRow label="New note" value="Ctrl/Cmd N" />
-        <InfoRow label="Daily note" value="Ctrl/Cmd Shift D" />
-      </SettingGrid>
+      <HotkeyEditor />
     </SettingsSection>
   );
 }

@@ -5,6 +5,19 @@ import { useUIStore } from "@/stores/ui-store";
 import { useVaultStore } from "@/stores/vault-store";
 import type { CommandItem } from "@/types/domain";
 import { runPluginCommand } from "@/features/plugins/plugin-command-registry";
+import {
+  closeActiveTab,
+  convertLinksGlobally,
+  deleteWorkspace,
+  insertTemplate,
+  listSavedWorkspaces,
+  listTemplates,
+  loadWorkspace,
+  reopenClosedTab,
+  runRandomNote,
+  runUniqueNote,
+  saveCurrentWorkspace,
+} from "@/features/core-plugins/commands";
 
 interface CommandPaletteProps {
   onClose: () => void;
@@ -69,6 +82,58 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
     if (item.id === "health.open") setView("health");
     if (item.id === "plugins.open") setView("plugins");
     if (item.id === "settings.permissions") setView("settings");
+    if (item.id === "note.random") void runRandomNote();
+    if (item.id === "note.unique") void runUniqueNote();
+    if (item.id === "templates.insert") {
+      void listTemplates().then((templates) => {
+        if (templates.length === 0) {
+          alert("No templates found in Templates/ folder.");
+          return;
+        }
+        const choice = prompt(
+          `Insert template:\n${templates.map((t, i) => `${i + 1}. ${t.name}`).join("\n")}\n\nEnter number:`,
+          "1",
+        );
+        if (!choice) return;
+        const idx = Number(choice) - 1;
+        if (templates[idx]) void insertTemplate(templates[idx].path);
+      });
+    }
+    if (item.id === "tab.reopen-closed") reopenClosedTab();
+    if (item.id === "tab.close-active") closeActiveTab();
+    if (item.id === "workspace.save") {
+      const name = prompt("Workspace name");
+      if (name) saveCurrentWorkspace(name);
+    }
+    if (item.id === "workspace.load") {
+      const list = listSavedWorkspaces();
+      if (list.length === 0) {
+        alert("No saved workspaces.");
+      } else {
+        const choice = prompt(
+          `Load workspace:\n${list.map((w, i) => `${i + 1}. ${w.name}`).join("\n")}\n\nNumber to load, or "delete N" to remove:`,
+          "1",
+        );
+        if (choice) {
+          const del = choice.match(/^delete\s+(\d+)$/i);
+          if (del) {
+            const idx = Number(del[1]) - 1;
+            if (list[idx]) deleteWorkspace(list[idx].name);
+          } else {
+            const idx = Number(choice) - 1;
+            if (list[idx]) loadWorkspace(list[idx].name);
+          }
+        }
+      }
+    }
+    if (item.id === "format.convert") {
+      const dir = prompt(
+        "Convert links across vault:\n1. wikilink → markdown\n2. markdown → wikilink",
+        "1",
+      );
+      if (dir === "1") void convertLinksGlobally("wikilink-to-markdown");
+      if (dir === "2") void convertLinksGlobally("markdown-to-wikilink");
+    }
     if (item.kind === "plugin") void runPluginCommand(item.id);
     onClose();
   }

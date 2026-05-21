@@ -37,3 +37,16 @@ export function titleFromMarkdown(path: string, content: string): string {
   if (heading) return heading;
   return path.split(/[\\/]/).pop()?.replace(/\.md$/i, "") ?? "Untitled";
 }
+
+export function formatLink(
+  targetPath: string,
+  format: "wikilink" | "markdown",
+  alias?: string,
+): string {
+  const noteName = targetPath.split("/").pop()?.replace(/\.md$/i, "") ?? targetPath;
+  if (format === "wikilink") {
+    return alias ? `[[${noteName}|${alias}]]` : `[[${noteName}]]`;
+  }
+  const display = alias ?? noteName;
+  return `[${display}](${encodeURI(targetPath)})`;
+}

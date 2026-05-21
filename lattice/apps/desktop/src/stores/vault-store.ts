@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { FileNode, NoteContent, VaultInfo } from "@/types/domain";
 import { commands } from "@/lib/commands";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 const LAST_VAULT_KEY = "lattice.lastVaultPath";
 
@@ -64,6 +65,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
   async setActivePath(path) {
     set({ loading: true, activePath: path, error: null });
+    useWorkspaceStore.getState().openTab(path, { activate: true });
     try {
       const note = await commands.readNote(path);
       set({ activeNote: note, loading: false });

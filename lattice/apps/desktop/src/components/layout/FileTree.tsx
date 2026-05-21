@@ -1,9 +1,16 @@
 import { FileText, Folder, FolderOpen } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { FileContextMenu } from "@/components/layout/FileContextMenu";
 import { cn } from "@/lib/utils";
 import { useVaultStore } from "@/stores/vault-store";
 import type { FileNode } from "@/types/domain";
+
+interface MenuState {
+  node: FileNode;
+  x: number;
+  y: number;
+}
 
 interface FlatNode {
   node: FileNode;
@@ -38,6 +45,7 @@ export function FileTree({ filter = "" }: { filter?: string }) {
   const activePath = useVaultStore((state) => state.activePath);
   const setActivePath = useVaultStore((state) => state.setActivePath);
   const [openFolders, setOpenFolders] = useState(() => new Set<string>());
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const visibleFiles = useMemo(() => filterNodes(files, filter), [files, filter]);
   const rows = useMemo(() => flatten(visibleFiles, filter.trim() ? allFolderPaths(visibleFiles) : openFolders), [filter, visibleFiles, openFolders]);
@@ -88,6 +96,10 @@ export function FileTree({ filter = "" }: { filter?: string }) {
                   if (isFolder) toggleFolder(node.path);
                   else if (isMarkdown) void setActivePath(node.path);
                 }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setMenu({ node, x: event.clientX, y: event.clientY });
+                }}
               >
                 {isFolder ? (
                   isOpen ? (
@@ -109,6 +121,14 @@ export function FileTree({ filter = "" }: { filter?: string }) {
           </div>
         )}
       </div>
+      {menu && (
+        <FileContextMenu
+          node={menu.node}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 }

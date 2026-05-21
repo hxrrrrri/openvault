@@ -5,7 +5,10 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/Button";
 import { EmojiPicker } from "@/components/editor/EmojiPicker";
 import { InsertMenu } from "@/components/editor/InsertMenu";
+import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { MarkdownPreview } from "@/components/editor/MarkdownPreview";
+import { PropertiesPanel } from "@/components/editor/PropertiesPanel";
+import { TabBar } from "@/components/layout/TabBar";
 import { SourcePanel } from "@/components/editor/SourcePanel";
 import { WysiwygEditor } from "@/components/editor/WysiwygEditor";
 import { WysiwygSlashMenu } from "@/components/editor/WysiwygSlashMenu";
@@ -175,26 +178,27 @@ export function EditorWorkspace() {
     return <div className="grid flex-1 place-items-center text-[var(--text-3)]">Open or create a note.</div>;
   }
 
-  void editorSettings;
   const showEditor = editorMode === "edit" || editorMode === "split";
   const showReading = editorMode === "preview";
   const showSource = editorMode === "split";
+  const sourceAsActive = editorSettings.defaultEditingMode === "source";
+  const cssClasses = extractCssClasses(activeNote.content);
 
   const sectionBg = bgPreset?.bg ?? "transparent";
   const accent = bgPreset?.accent ?? "#8B7CFF";
+  const paneClasses = ["relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(900px_520px_at_52%_-12%,rgba(139,124,255,0.11),transparent_60%),linear-gradient(180deg,#0a0a0e,#07070b)]", ...cssClasses].join(" ");
 
   return (
     <div
       ref={workspaceRef}
-      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(900px_520px_at_52%_-12%,rgba(139,124,255,0.11),transparent_60%),linear-gradient(180deg,#0a0a0e,#07070b)]"
+      className={paneClasses}
       style={{ ["--note-accent" as string]: accent }}
     >
-      <div className="flex h-9 items-end gap-px bg-[#08080c]/70 pl-3 shadow-[inset_0_-1px_0_rgba(139,124,255,0.08)] backdrop-blur-xl">
-        <div className="relative top-px flex items-center gap-2 rounded-t-lg bg-gradient-to-b from-[#14141a] to-[#0e0e13] px-3.5 py-2 text-xs shadow-[inset_0_1px_0_rgba(169,155,255,0.04),inset_0_0_0_1px_rgba(139,124,255,0.06)]">
-          <FilePenLine size={12} />
-          <span>{activeNote.title}</span>
+      <div className="flex items-stretch bg-[#08080c]/70 backdrop-blur-xl">
+        <div className="min-w-0 flex-1">
+          <TabBar />
         </div>
-        <div className="ml-auto flex items-center gap-1 px-3 pb-1.5">
+        <div className="flex items-center gap-1 px-3 pb-1.5">
           <div className="relative" ref={insertButtonRef}>
             <Button
               variant={insertOpen ? "primary" : "ghost"}
@@ -345,10 +349,31 @@ export function EditorWorkspace() {
                   {tag}
                 </span>
               ))}
-              <span className="pixel-label">{saving ? "saving" : "autosaved"}</span>
+              {editorSettings.showEditorStatus && (
+                <span className="pixel-label">{saving ? "saving" : "autosaved"}</span>
+              )}
+              {editorSettings.showEditorStatus && (
+                <span className="pixel-label opacity-60">
+                  {sourceAsActive ? "source" : "live preview"}
+                </span>
+              )}
             </div>
+            {editorSettings.showInlineTitle && (
+              <InlineTitle
+                title={activeNote.title}
+                path={activeNote.path}
+                onRename={async (next) => {
+                  const renamed = await renameActiveNote(activeNote.path, next);
+                  if (renamed) await useVaultStore.getState().setActivePath(renamed);
+                  await refreshFiles();
+                }}
+              />
+            )}
+            {editorSettings.propertiesDisplay === "visible" && (
+              <PropertiesPanel content={activeNote.content} onChange={updateActiveContent} />
+            )}
             <EditorSurfaceBoundary
-              resetKey={activeNote.path}
+              resetKey={`${activeNote.path}:${sourceAsActive ? "src" : "lp"}`}
               onError={() => setTiptapEditor(null)}
               fallback={(error) => (
                 <textarea
@@ -360,20 +385,30 @@ export function EditorWorkspace() {
                 />
               )}
             >
-              <WysiwygEditor
-                value={activeNote.content}
-                onChange={updateActiveContent}
-                placeholder={`Start writing "${activeNote.title}" — press / for blocks`}
-                exposeEditor={setTiptapEditor}
-              />
+              {sourceAsActive ? (
+                <MarkdownEditor
+                  value={activeNote.content}
+                  onChange={updateActiveContent}
+                  completionSource={completionSource}
+                  onOpenLink={(target) => void openLinkedNote(target)}
+                  livePreviewEnabled
+                />
+              ) : (
+                <WysiwygEditor
+                  value={activeNote.content}
+                  onChange={updateActiveContent}
+                  placeholder={`Start writing "${activeNote.title}" — press / for blocks`}
+                  exposeEditor={setTiptapEditor}
+                />
+              )}
             </EditorSurfaceBoundary>
             {editorNotice && (
               <div className="pointer-events-none absolute right-5 top-5 z-20 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-[11px] text-[var(--success)] shadow-[0_12px_36px_rgba(0,0,0,0.35)]">
                 {editorNotice}
               </div>
             )}
-            <WysiwygToolbar editor={tiptapEditor} />
-            <WysiwygSlashMenu editor={tiptapEditor} />
+            {!sourceAsActive && <WysiwygToolbar editor={tiptapEditor} />}
+            {!sourceAsActive && <WysiwygSlashMenu editor={tiptapEditor} />}
           </section>
         )}
 
@@ -408,7 +443,14 @@ export function EditorWorkspace() {
               }}
               onDoubleClick={() => setEditorMode("edit")}
             />
-            <SourcePanel content={activeNote.content} notePath={activeNote.path} onCollapse={() => setEditorMode("edit")} />
+            <SourcePanel
+              content={activeNote.content}
+              notePath={activeNote.path}
+              onChange={updateActiveContent}
+              onOpenLink={(target) => void openLinkedNote(target)}
+              completionSource={completionSource}
+              onCollapse={() => setEditorMode("edit")}
+            />
           </section>
         )}
       </div>
@@ -424,6 +466,92 @@ export function EditorWorkspace() {
 
 function extractTags(content: string): string[] {
   return Array.from(new Set(content.match(/#[\w/-]+/g) ?? []));
+}
+
+function extractCssClasses(content: string): string[] {
+  const fm = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return [];
+  const line = fm[1].match(/^cssclasses?:\s*(.+)$/m);
+  if (!line) return [];
+  const raw = line[1].trim();
+  if (raw.startsWith("[")) {
+    return raw
+      .replace(/^\[|\]$/g, "")
+      .split(",")
+      .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
+      .filter(Boolean);
+  }
+  return raw
+    .split(/\s+|,/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+async function renameActiveNote(oldPath: string, newTitle: string): Promise<string | null> {
+  const cleanTitle = newTitle.trim().replace(/[<>:"|?*\\/]+/g, "").trim();
+  if (!cleanTitle) return null;
+  const dir = oldPath.includes("/") ? oldPath.slice(0, oldPath.lastIndexOf("/") + 1) : "";
+  const ext = oldPath.toLowerCase().endsWith(".md") ? ".md" : "";
+  const newPath = `${dir}${cleanTitle}${ext}`;
+  if (newPath === oldPath) return null;
+  try {
+    const file = await commands.renameNote(oldPath, newPath);
+    return file.path;
+  } catch (error) {
+    console.warn("Inline rename failed", error);
+    return null;
+  }
+}
+
+function InlineTitle({
+  title,
+  path,
+  onRename,
+}: {
+  title: string;
+  path: string;
+  onRename: (next: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  useEffect(() => {
+    setDraft(title);
+  }, [title, path]);
+  return (
+    <div className="border-b border-[var(--border)]/40 px-10 pt-7 pb-3">
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(event) => setDraft(event.currentTarget.value)}
+          onBlur={() => {
+            setEditing(false);
+            if (draft.trim() && draft.trim() !== title) void onRename(draft.trim());
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+            if (event.key === "Escape") {
+              setDraft(title);
+              setEditing(false);
+            }
+          }}
+          className="w-full bg-transparent text-3xl font-bold tracking-tight text-white outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="block w-full text-left text-3xl font-bold tracking-tight text-white hover:text-[var(--violet-2)]"
+          title="Click to rename"
+        >
+          {title.replace(/\.md$/i, "")}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function flattenFiles(files: FileNode[]): FileNode[] {

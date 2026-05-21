@@ -10,6 +10,7 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { OnboardingScreen } from "@/features/onboarding/OnboardingScreen";
 import { Routes } from "@/app/routes";
 import { useGlobalShortcuts } from "@/app/shortcuts";
+import { PagePreview } from "@/features/core-plugins/page-preview/PagePreview";
 import { useGraphStore } from "@/stores/graph-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
@@ -99,6 +100,7 @@ export function App() {
 
       {!mobilePreview && <StatusBar />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+      <PagePreview />
     </div>
   );
 }

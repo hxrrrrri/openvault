@@ -1,6 +1,32 @@
 import { useEffect } from "react";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useVaultStore } from "@/stores/vault-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+
+export function resolveNewNoteFolder(): string {
+  const files = useSettingsStore.getState().files;
+  switch (files.defaultNoteLocation) {
+    case "vault":
+      return "";
+    case "inbox":
+      return "Inbox";
+    case "custom":
+      return files.newNoteFolder.replace(/^\/+|\/+$/g, "");
+    case "same-folder": {
+      const activePath = useVaultStore.getState().activePath;
+      if (!activePath) return "";
+      const idx = activePath.lastIndexOf("/");
+      return idx < 0 ? "" : activePath.slice(0, idx);
+    }
+  }
+}
+
+function newNotePath(): string {
+  const folder = resolveNewNoteFolder();
+  const base = folder ? `${folder}/` : "";
+  return `${base}Untitled ${Date.now()}.md`;
+}
 
 export function useGlobalShortcuts() {
   const togglePalette = useUIStore((state) => state.togglePalette);
@@ -22,7 +48,7 @@ export function useGlobalShortcuts() {
       }
       if (mod && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        void createNote(`Inbox/Untitled ${Date.now()}.md`);
+        void createNote(newNotePath());
         setView("workspace");
       }
       if (mod && event.shiftKey && event.key.toLowerCase() === "d") {
@@ -33,6 +59,21 @@ export function useGlobalShortcuts() {
       if (mod && event.shiftKey && event.key.toLowerCase() === "c") {
         event.preventDefault();
         setView("canvas");
+      }
+      if (mod && event.shiftKey && event.key.toLowerCase() === "t") {
+        event.preventDefault();
+        const path = useWorkspaceStore.getState().reopenLastClosed();
+        if (path) void useVaultStore.getState().setActivePath(path);
+      }
+      if (mod && event.key.toLowerCase() === "w") {
+        const active = useWorkspaceStore.getState().activeTabId;
+        if (active) {
+          event.preventDefault();
+          useWorkspaceStore.getState().closeTab(active);
+          const next = useWorkspaceStore.getState().activeTabId;
+          const nextPath = useWorkspaceStore.getState().tabs.find((t) => t.id === next)?.path ?? null;
+          if (nextPath) void useVaultStore.getState().setActivePath(nextPath);
+        }
       }
       if (mod && event.key.toLowerCase() === "g") {
         event.preventDefault();
