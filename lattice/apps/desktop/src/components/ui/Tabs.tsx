@@ -22,9 +22,9 @@ export function Tabs<T extends string>({ items, value, onChange, className }: Ta
           key={item.id}
           onClick={() => onChange(item.id)}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-medium text-[var(--text-3)] transition",
+            "inline-flex shrink-0 items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-xs font-medium text-[var(--text-3)] transition",
             value === item.id &&
-              "bg-violet/15 text-[var(--text)] shadow-[0_0_0_1px_rgba(139,124,255,0.35),inset_0_1px_0_rgba(255,255,255,0.05)]",
+              "bg-violet/15 text-[var(--text)] shadow-[0_0_0_1px_rgba(139,124,255,0.35),inset_0_1px_0_rgba(169,155,255,0.05)]",
           )}
         >
           {item.icon}

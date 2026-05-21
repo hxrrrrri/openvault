@@ -27,6 +27,7 @@ export function CollectionsView() {
   const [bookQuery, setBookQuery] = useState("");
   const [bookResults, setBookResults] = useState<OpenLibraryDoc[]>([]);
   const [bookLoading, setBookLoading] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(310);
   const setActivePath = useVaultStore((state) => state.setActivePath);
   const createNote = useVaultStore((state) => state.createNote);
   const createFolder = useVaultStore((state) => state.createFolder);
@@ -84,7 +85,11 @@ export function CollectionsView() {
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-gradient-to-b from-[#09090d] to-[#060609]">
-      <aside className="w-[310px] shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[#0b0b10] p-4">
+      <aside
+        className="relative shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[#0b0b10] p-4"
+        style={{ width: sidebarWidth }}
+      >
+        <ResizeHandle onResize={(delta) => setSidebarWidth((width) => clamp(width + delta, 240, 520))} />
         <div className="pixel-label mb-3 flex items-center gap-2 text-[10px]">
           <ListFilter size={13} /> Collection source
         </div>
@@ -254,6 +259,34 @@ function valueToString(value: unknown): string {
 
 function yamlString(value: string): string {
   return JSON.stringify(value);
+}
+
+function ResizeHandle({ onResize }: { onResize: (deltaX: number) => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Resize collections sidebar"
+      className="absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize bg-transparent transition hover:bg-violet/20"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        let lastX = event.clientX;
+        const move = (moveEvent: PointerEvent) => {
+          onResize(moveEvent.clientX - lastX);
+          lastX = moveEvent.clientX;
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up, { once: true });
+      }}
+    />
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function bookNoteTemplate(book: { title: string; author: string; coverUrl: string; isbn: string; year?: number; categories: string[]; source?: string }) {

@@ -4,6 +4,7 @@ import { useSearchStore } from "@/stores/search-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useVaultStore } from "@/stores/vault-store";
 import type { CommandItem } from "@/types/domain";
+import { runPluginCommand } from "@/features/plugins/plugin-command-registry";
 
 interface CommandPaletteProps {
   onClose: () => void;
@@ -68,6 +69,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
     if (item.id === "health.open") setView("health");
     if (item.id === "plugins.open") setView("plugins");
     if (item.id === "settings.permissions") setView("settings");
+    if (item.kind === "plugin") void runPluginCommand(item.id);
     onClose();
   }
 

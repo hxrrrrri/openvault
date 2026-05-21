@@ -7,13 +7,18 @@ use lattice_core::files::{list_markdown_files, scan_file_tree};
 use lattice_core::{Vault, VaultInfo};
 use lattice_db::LatticeDb;
 use lattice_indexer::parse_markdown;
-use lattice_plugin_runtime::{PermissionGrant, PluginInfo, PluginManifest};
+use lattice_plugin_runtime::{
+    read_runtime_bundle, PermissionGrant, PluginInfo, PluginManifest, PluginRuntimeBundle,
+};
 use serde::Serialize;
+
+use crate::terminal::TerminalRegistry;
 
 #[derive(Default)]
 pub struct AppState {
     workspace: Mutex<Option<AppWorkspace>>,
     plugins: Mutex<Vec<PluginInfo>>,
+    pub terminal: TerminalRegistry,
 }
 
 pub struct AppWorkspace {
@@ -136,6 +141,76 @@ impl AppState {
         Ok(guard.clone())
     }
 
+    pub fn install_plugin(&self, plugin: PluginInfo) -> Result<PluginInfo, String> {
+        let mut guard = self
+            .plugins
+            .lock()
+            .map_err(|_| "plugin lock poisoned".to_string())?;
+        guard.retain(|existing| existing.id != plugin.id);
+        guard.push(plugin.clone());
+        Ok(plugin)
+    }
+
+    pub fn set_plugin_enabled(&self, id: String, enabled: bool) -> Result<bool, String> {
+        let mut guard = self
+            .plugins
+            .lock()
+            .map_err(|_| "plugin lock poisoned".to_string())?;
+        let plugin = guard
+            .iter_mut()
+            .find(|plugin| plugin.id == id)
+            .ok_or_else(|| format!("plugin not installed: {id}"))?;
+        plugin.enabled = enabled;
+        Ok(true)
+    }
+
+    pub fn plugin_runtime_bundle(&self, id: String) -> Result<PluginRuntimeBundle, String> {
+        let guard = self
+            .plugins
+            .lock()
+            .map_err(|_| "plugin lock poisoned".to_string())?;
+        let plugin = guard
+            .iter()
+            .find(|plugin| plugin.id == id)
+            .ok_or_else(|| format!("plugin not installed: {id}"))?;
+        read_runtime_bundle(plugin).map_err(|error| error.to_string())
+    }
+
+    pub fn read_plugin_data(&self, id: String) -> Result<Option<String>, String> {
+        self.assert_plugin_permission(&id, "storage:plugin-data")?;
+        let plugin = self.plugin_by_id(&id)?;
+        self.with_workspace(|workspace| {
+            let managed = workspace
+                .vault
+                .lattice_dir()
+                .join("plugins")
+                .join(&id)
+                .join("data.json");
+            if managed.exists() {
+                return fs::read_to_string(managed)
+                    .map(Some)
+                    .map_err(|error| error.to_string());
+            }
+            let bundled = PathBuf::from(&plugin.installed_path).join("data.json");
+            if bundled.exists() {
+                return fs::read_to_string(bundled)
+                    .map(Some)
+                    .map_err(|error| error.to_string());
+            }
+            Ok(None)
+        })
+    }
+
+    pub fn write_plugin_data(&self, id: String, data: String) -> Result<bool, String> {
+        self.assert_plugin_permission(&id, "storage:plugin-data")?;
+        self.with_workspace(|workspace| {
+            let directory = workspace.vault.lattice_dir().join("plugins").join(&id);
+            fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+            fs::write(directory.join("data.json"), data).map_err(|error| error.to_string())?;
+            Ok(true)
+        })
+    }
+
     pub fn update_plugin_permissions(
         &self,
         id: String,
@@ -149,6 +224,31 @@ impl AppState {
             plugin.granted_permissions = permissions;
         }
         Ok(true)
+    }
+
+    pub fn assert_plugin_permission(&self, id: &str, permission: &str) -> Result<(), String> {
+        let plugin = self.plugin_by_id(id)?;
+        if plugin
+            .granted_permissions
+            .iter()
+            .any(|grant| grant.permission == permission && grant.granted)
+        {
+            Ok(())
+        } else {
+            Err(format!("permission denied for {id}: {permission}"))
+        }
+    }
+
+    fn plugin_by_id(&self, id: &str) -> Result<PluginInfo, String> {
+        let guard = self
+            .plugins
+            .lock()
+            .map_err(|_| "plugin lock poisoned".to_string())?;
+        guard
+            .iter()
+            .find(|plugin| plugin.id == id)
+            .cloned()
+            .ok_or_else(|| format!("plugin not installed: {id}"))
     }
 
     fn open_workspace(&self, vault: Vault) -> Result<VaultInfo, String> {

@@ -67,8 +67,11 @@ export function FileTree({ filter = "" }: { filter?: string }) {
     <div ref={parentRef} className="min-h-0 flex-1 overflow-auto px-2">
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {renderedItems.map((virtualRow) => {
-          const { node, depth } = rows[virtualRow.index];
+          const row = rows[virtualRow.index];
+          if (!row) return null;
+          const { node, depth } = row;
           const isFolder = node.kind === "folder";
+          const isMarkdown = node.kind === "file" && node.isMarkdown;
           const isOpen = openFolders.has(node.path);
           const active = node.path === activePath;
           return (
@@ -80,9 +83,10 @@ export function FileTree({ filter = "" }: { filter?: string }) {
               <button
                 className={cn("row h-7 w-full text-left", active && "active")}
                 style={{ paddingLeft: 8 + depth * 14 }}
+                title={isFolder || isMarkdown ? node.path : `${node.path} is an attachment`}
                 onClick={() => {
                   if (isFolder) toggleFolder(node.path);
-                  else void setActivePath(node.path);
+                  else if (isMarkdown) void setActivePath(node.path);
                 }}
               >
                 {isFolder ? (

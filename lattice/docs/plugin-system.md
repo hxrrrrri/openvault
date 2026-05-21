@@ -13,19 +13,54 @@ Plugins declare a manifest:
   "permissions": {
     "vault": ["read"],
     "network": [],
-    "commands": ["register"],
-    "ui": ["status-bar", "view"],
+    "editor": ["commands"],
+    "workspace": ["views"],
+    "ui": ["status-bar", "settings-tab"],
+    "storage": ["plugin-data"],
     "secrets": []
   }
 }
 ```
 
-The MVP validates manifests, stores installed plugin state, tracks granted permissions, and exposes permission review UI. Runtime execution is intentionally constrained until the sandbox worker boundary is complete.
+The plugin system validates manifests, stores installed plugin state, tracks granted permissions, and exposes permission review UI. Obsidian community plugins execute through an isolated browser worker that receives a compatibility API bridge rather than raw desktop internals.
 
-Future runtime goals:
+Runtime execution is permission-first:
 
-- Worker isolation.
-- Capability-scoped APIs.
+- The worker can `require("obsidian")` and receives only the shimmed API surface.
+- Vault, workspace, editor, UI, plugin data, network, and desktop adapter calls are checked against explicit grants.
+- Node-style `path` and `fs.promises` compatibility adapters are gated behind `system:node-api` and `system:filesystem`.
+- Network helpers such as `requestUrl` require `network:http`; ambient worker network globals are blocked when that grant is absent.
+- Styles are inserted through LATTICE's managed plugin style registry and removed on unload.
+- Plugin data is stored under `.lattice/plugins/<plugin-id>/data.json`, with installed-folder `data.json` used as an initial fallback.
+
+## Obsidian compatibility
+
+LATTICE accepts both native LATTICE manifests and standard Obsidian plugin manifests. Obsidian manifests usually provide `id`, `name`, `version`, `minAppVersion`, `description`, `author`, `main`, and `isDesktopOnly` rather than a granular `permissions` block. When LATTICE detects that shape, it marks the plugin as `ecosystem: "obsidian"` and maps it to broad permission requests for review.
+
+Installable Obsidian folder shape:
+
+```text
+plugin-id/
+├── manifest.json
+├── main.js
+├── styles.css
+└── data.json
+```
+
+Compatibility details live in [Obsidian Parity](obsidian-parity.md).
+
+Current runtime surface:
+
+- Worker isolation for `main.js`.
+- Capability-scoped APIs for common Obsidian plugins.
+- `Plugin` lifecycle helpers: `onload`, `onunload`, `addCommand`, `addRibbonIcon`, `addStatusBarItem`, `addSettingTab`, `register`, `registerEvent`, `registerInterval`.
+- `app.vault`, `app.workspace`, and `app.metadataCache` basics.
+- `TFile`, `TFolder`, `TAbstractFile`, `Notice`, `Modal`, `PluginSettingTab`, and `Setting` shims.
+- Markdown post processor and code block processor registration.
+- `loadData()` and `saveData()` persistence.
+
+Remaining goals:
+
 - Audit log for permission use.
 - Secret storage broker.
-- Compatibility shim for migrated community plugins.
+- Broader Obsidian view, editor, and desktop API coverage.

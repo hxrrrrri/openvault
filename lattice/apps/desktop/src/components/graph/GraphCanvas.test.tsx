@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GraphCanvas } from "@/components/graph/GraphCanvas";
 import type { GraphPayload } from "@/types/domain";
@@ -48,6 +48,8 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   measureText: vi.fn(() => ({ width: 50 })),
   fillText: vi.fn(),
 })) as never;
+HTMLCanvasElement.prototype.setPointerCapture = vi.fn();
+HTMLCanvasElement.prototype.releasePointerCapture = vi.fn();
 
 describe("GraphCanvas", () => {
   it("renders a canvas", () => {
@@ -66,5 +68,30 @@ describe("GraphCanvas", () => {
       </div>,
     );
     expect(container.querySelector("canvas")).toBeTruthy();
+  });
+
+  it("selects a node on click", async () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <div style={{ width: 800, height: 600 }}>
+        <GraphCanvas
+          graph={graph}
+          selectedId={null}
+          hoveredId={null}
+          filters={{ includeOrphans: true }}
+          labelMode="auto"
+          onSelect={onSelect}
+          onHover={vi.fn()}
+          onOpenNode={vi.fn()}
+        />
+      </div>,
+    );
+
+    const canvas = container.querySelector("canvas");
+    expect(canvas).toBeTruthy();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    fireEvent.click(canvas!, { clientX: 450, clientY: 325 });
+
+    expect(onSelect).toHaveBeenCalledWith("A.md");
   });
 });

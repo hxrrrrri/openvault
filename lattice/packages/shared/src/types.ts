@@ -142,6 +142,30 @@ export interface SearchResult {
 export interface CollectionQuery {
   folder?: string | null;
   text?: string | null;
+  propertyFilters?: CollectionPropertyFilter[] | null;
+  sort?: CollectionSort | null;
+  limit?: number | null;
+}
+
+export type CollectionFilterOperator =
+  | "eq"
+  | "neq"
+  | "contains"
+  | "exists"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte";
+
+export interface CollectionPropertyFilter {
+  key: string;
+  op?: CollectionFilterOperator | null;
+  value?: unknown;
+}
+
+export interface CollectionSort {
+  field: string;
+  direction?: "asc" | "desc" | null;
 }
 
 export interface CollectionItem {
@@ -177,6 +201,33 @@ export interface AiCliRunResult {
   elapsedMs: number;
 }
 
+export interface TerminalAdapterStatus {
+  id: string;
+  label: string;
+  available: boolean;
+  command: string;
+  installHint: string;
+}
+
+export interface TerminalSessionInfo {
+  id: string;
+  cliId: string;
+  cliLabel: string;
+  alive: boolean;
+  startedAt: string;
+  historySize: number;
+}
+
+export interface TerminalOutputEvent {
+  sessionId: string;
+  chunk: string;
+}
+
+export interface TerminalExitEvent {
+  sessionId: string;
+  code?: number | null;
+}
+
 export interface VaultHealthReport {
   score: number;
   totalNotes: number;
@@ -187,7 +238,11 @@ export interface VaultHealthReport {
   notesWithoutTags: number;
   duplicateTitles: string[];
   mostConnected: Array<{ title: string; path: string; links: number }>;
-  suggestions: Array<{ title: string; body: string; severity: "info" | "warning" | "danger" }>;
+  suggestions: Array<{
+    title: string;
+    body: string;
+    severity: "info" | "warning" | "danger";
+  }>;
 }
 
 export interface PluginManifest {
@@ -198,6 +253,25 @@ export interface PluginManifest {
   author: string;
   main: string;
   permissions: Record<string, string[]>;
+  ecosystem?: "lattice" | "obsidian";
+  minAppVersion?: string | null;
+  isDesktopOnly?: boolean | null;
+  styles?: string | null;
+}
+
+export type PluginCompatibilityLevel =
+  | "installable"
+  | "loadable"
+  | "functional"
+  | "native-quality";
+
+export interface PluginCompatibilityReport {
+  level: PluginCompatibilityLevel;
+  missingApiWarnings: string[];
+  requestedPermissions: string[];
+  desktopOnly: boolean;
+  hasStyles: boolean;
+  hasData: boolean;
 }
 
 export interface PluginInfo {
@@ -210,10 +284,22 @@ export interface PluginInfo {
   installedPath: string;
   manifest: PluginManifest;
   grantedPermissions: PermissionGrant[];
+  compatibility: PluginCompatibilityReport;
 }
 
 export interface PermissionGrant {
   permission: string;
   granted: boolean;
   lastUsedAt?: string | null;
+}
+
+export interface PluginRuntimeBundle {
+  id: string;
+  installedPath: string;
+  manifest: PluginManifest;
+  mainSource: string;
+  stylesSource?: string | null;
+  initialDataSource?: string | null;
+  grantedPermissions: PermissionGrant[];
+  compatibility: PluginCompatibilityReport;
 }

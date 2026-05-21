@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { CommandBar } from "@/components/layout/CommandBar";
 import { LeftSidebar } from "@/components/layout/LeftSidebar";
@@ -31,6 +31,8 @@ export function App() {
   const setLeftOpen = useUIStore((state) => state.setLeftOpen);
   const setRightOpen = useUIStore((state) => state.setRightOpen);
   const appearance = useSettingsStore((state) => state.appearance);
+  const [leftWidth, setLeftWidth] = useState(270);
+  const [rightWidth, setRightWidth] = useState(330);
 
   useGlobalShortcuts();
 
@@ -69,14 +71,28 @@ export function App() {
           <MobilePreview />
         ) : (
           <>
-            {leftOpen ? <LeftSidebar /> : <SidebarRail side="left" onClick={() => setLeftOpen(true)} />}
+            {leftOpen ? (
+              <LeftSidebar
+                width={leftWidth}
+                onResize={(delta) => setLeftWidth((width) => clamp(width + delta, 220, 420))}
+              />
+            ) : (
+              <SidebarRail side="left" onClick={() => setLeftOpen(true)} />
+            )}
 
-            <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+            <main className="relative z-20 flex min-w-0 flex-1 flex-col overflow-hidden">
               <Routes view={view} />
             </main>
 
             {view === "workspace" &&
-              (rightOpen ? <RightSidebar /> : <SidebarRail side="right" onClick={() => setRightOpen(true)} />)}
+              (rightOpen ? (
+                <RightSidebar
+                  width={rightWidth}
+                  onResize={(delta) => setRightWidth((width) => clamp(width - delta, 260, 520))}
+                />
+              ) : (
+                <SidebarRail side="right" onClick={() => setRightOpen(true)} />
+              ))}
           </>
         )}
       </div>
@@ -85,6 +101,10 @@ export function App() {
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
     </div>
   );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function accentTokens(accent: "violet" | "indigo" | "emerald" | "amber") {

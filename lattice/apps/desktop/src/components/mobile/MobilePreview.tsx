@@ -20,8 +20,8 @@ export function MobilePreview() {
         <div className="mt-1 text-sm">Responsive preview</div>
       </div>
 
-      <div className="relative z-10 h-[720px] w-[360px] overflow-hidden rounded-[38px] border border-white/15 bg-[#08080c] p-3 shadow-[var(--shadow-float),0_0_70px_rgba(139,124,255,0.2)]">
-        <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#111116] to-[#050507]">
+      <div className="relative z-10 h-[720px] w-[360px] overflow-hidden rounded-[38px] border border-[#2f2a55] bg-[#08080c] p-3 shadow-[var(--shadow-float),0_0_70px_rgba(139,124,255,0.2)]">
+        <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-[#242039] bg-gradient-to-b from-[#111116] to-[#050507]">
           <div className="mono flex h-8 items-center justify-between px-6 text-[11px]">
             <span>19:42</span>
             <span className="text-[var(--success)]">offline</span>

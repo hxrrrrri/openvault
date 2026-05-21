@@ -1,8 +1,11 @@
 import { lazy, Suspense } from "react";
 import { LoadingState } from "@/components/ui/LoadingState";
+import { ViewErrorBoundary } from "@/components/ui/ViewErrorBoundary";
+import { useVaultStore } from "@/stores/vault-store";
 import type { WorkspaceView } from "@/types/domain";
 
 const EditorWorkspace = lazy(() => import("@/components/editor/EditorWorkspace").then((mod) => ({ default: mod.EditorWorkspace })));
+const LandingView = lazy(() => import("@/features/landing/LandingView").then((mod) => ({ default: mod.LandingView })));
 const CollectionsView = lazy(() => import("@/features/collections/CollectionsView").then((mod) => ({ default: mod.CollectionsView })));
 const AiConsoleView = lazy(() => import("@/features/ai/AiConsoleView").then((mod) => ({ default: mod.AiConsoleView })));
 const CanvasView = lazy(() => import("@/features/canvas/CanvasView").then((mod) => ({ default: mod.CanvasView })));
@@ -16,16 +19,20 @@ interface RoutesProps {
 }
 
 export function Routes({ view }: RoutesProps) {
+  const activePath = useVaultStore((state) => state.activePath);
   return (
-    <Suspense fallback={<LoadingState label="Loading view" />}>
-      {view === "graph" && <GraphView />}
-      {view === "collections" && <CollectionsView />}
-      {view === "ai" && <AiConsoleView />}
-      {view === "canvas" && <CanvasView />}
-      {view === "health" && <VaultHealthDashboard />}
-      {view === "plugins" && <PluginMarketplace />}
-      {view === "settings" && <SettingsScreen />}
-      {view === "workspace" && <EditorWorkspace />}
-    </Suspense>
+    <ViewErrorBoundary resetKey={`${view}:${activePath ?? ""}`}>
+      <Suspense fallback={<LoadingState label="Loading view" />}>
+        {view === "graph" && <GraphView />}
+        {view === "collections" && <CollectionsView />}
+        {view === "ai" && <AiConsoleView />}
+        {view === "canvas" && <CanvasView />}
+        {view === "health" && <VaultHealthDashboard />}
+        {view === "plugins" && <PluginMarketplace />}
+        {view === "settings" && <SettingsScreen />}
+        {view === "workspace" && <EditorWorkspace />}
+        {view === "landing" && <LandingView />}
+      </Suspense>
+    </ViewErrorBoundary>
   );
 }

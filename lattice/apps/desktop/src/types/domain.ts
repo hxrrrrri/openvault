@@ -4,7 +4,10 @@ export type {
   AiCliRunRequest,
   AiCliRunResult,
   CollectionItem,
+  CollectionFilterOperator,
+  CollectionPropertyFilter,
   CollectionQuery,
+  CollectionSort,
   FileNode,
   GraphEdge,
   GraphFilters,
@@ -15,17 +18,33 @@ export type {
   NoteMetadata,
   OutgoingLink,
   PermissionGrant,
+  PluginCompatibilityLevel,
+  PluginCompatibilityReport,
   PluginInfo,
   PluginManifest,
+  PluginRuntimeBundle,
   SearchResult,
   TaskMetadata,
+  TerminalAdapterStatus,
+  TerminalExitEvent,
+  TerminalOutputEvent,
+  TerminalSessionInfo,
   UnlinkedMention,
   UnresolvedLink,
   VaultHealthReport,
   VaultInfo,
 } from "@lattice/shared";
 
-export type WorkspaceView = "workspace" | "collections" | "ai" | "canvas" | "graph" | "health" | "plugins" | "settings";
+export type WorkspaceView =
+  | "landing"
+  | "workspace"
+  | "collections"
+  | "ai"
+  | "canvas"
+  | "graph"
+  | "health"
+  | "plugins"
+  | "settings";
 
 export type EditorMode = "edit" | "preview" | "split";
 

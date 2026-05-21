@@ -4,6 +4,7 @@ mod errors;
 #[allow(dead_code)]
 mod events;
 mod state;
+mod terminal;
 
 use commands::*;
 use state::AppState;
@@ -31,6 +32,7 @@ pub fn run() {
             create_folder,
             get_note_metadata,
             read_asset_data_url,
+            import_asset,
             get_unlinked_mentions,
             convert_unlinked_mention,
             reindex_note,
@@ -38,6 +40,14 @@ pub fn run() {
             list_collection_items,
             list_ai_cli_adapters,
             run_ai_cli,
+            list_terminal_adapters,
+            list_terminal_sessions,
+            start_terminal_session,
+            get_terminal_history,
+            write_terminal_input,
+            resize_terminal_session,
+            kill_terminal_session,
+            kill_all_terminal_sessions,
             get_global_graph,
             get_local_graph,
             get_backlinks,
@@ -48,8 +58,12 @@ pub fn run() {
             get_vault_health,
             list_plugins,
             install_plugin_from_folder,
+            install_obsidian_plugins_from_vault,
             enable_plugin,
             disable_plugin,
+            read_plugin_runtime_bundle,
+            read_plugin_data,
+            write_plugin_data,
             update_plugin_permissions
         ])
         .run(tauri::generate_context!())

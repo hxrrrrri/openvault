@@ -1,5 +1,5 @@
 import { Eye, GitBranch, RotateCcw, Tag } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { GraphCanvas } from "@/components/graph/GraphCanvas";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -25,8 +25,9 @@ export function GraphView() {
   const setActivePath = useVaultStore((state) => state.setActivePath);
   const activeNote = useVaultStore((state) => state.activeNote);
   const setView = useUIStore((state) => state.setView);
-  const selected = graph.nodes.find((node) => node.id === selectedNodeId) ?? graph.nodes[0];
+  const selected = graph.nodes.find((node) => node.id === selectedNodeId) ?? null;
   const tags = useMemo(() => Array.from(new Set(graph.nodes.flatMap((node) => node.tags))).sort(), [graph.nodes]);
+  const [sidebarWidth, setSidebarWidth] = useState(256);
 
   useEffect(() => {
     if (graphMode === "local" && activeNote) {
@@ -38,7 +39,11 @@ export function GraphView() {
 
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[radial-gradient(ellipse_at_center,#0a0a14_0%,#050507_80%)]">
-      <aside className="w-64 shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[#08080c]/60 p-4 backdrop-blur-xl">
+      <aside
+        className="relative shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[#08080c]/60 p-4 backdrop-blur-xl"
+        style={{ width: sidebarWidth }}
+      >
+        <ResizeHandle onResize={(delta) => setSidebarWidth((width) => clamp(width + delta, 220, 460))} />
         <div className="pixel-label mb-3 text-[10px]">Graph filters</div>
         <div className="space-y-3">
           <label className="flex items-center justify-between gap-3 text-xs text-[var(--text-2)]">
@@ -63,7 +68,7 @@ export function GraphView() {
         <div className="divider my-4" />
         <div className="pixel-label mb-3 text-[10px]">Cluster legend</div>
         <div className="space-y-2 text-xs text-[var(--text-2)]">
-          <Legend color="#ffffff" label="Active node" />
+          <Legend color="#d8d0ff" label="Active node" />
           <Legend color="#A99BFF" label="Linked note" />
           <Legend color="#8eaaff" label="Semantic similarity" />
           <Legend color="#5d5d70" label="Orphan note" />
@@ -90,10 +95,10 @@ export function GraphView() {
 
         <div className="divider my-4" />
         <div className="pixel-label mb-3 text-[10px]">Node inspector</div>
-        {selected && (
+        {selected ? (
           <div className="card p-3">
             <div className="flex items-center gap-2">
-              <span className="pulse size-2.5 rounded-full bg-white shadow-[0_0_10px_#fff]" />
+              <span className="pulse size-2.5 rounded-full bg-violet/80 shadow-[0_0_10px_rgba(169,155,255,0.75)]" />
               <span className="text-xs font-semibold">{selected.title}</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
@@ -110,6 +115,10 @@ export function GraphView() {
             >
               Open in editor
             </Button>
+          </div>
+        ) : (
+          <div className="rounded-lg bg-white/[0.025] p-3 text-xs leading-5 text-[var(--text-3)] shadow-[inset_0_0_0_1px_rgba(139,124,255,0.06)]">
+            No node selected.
           </div>
         )}
       </aside>
@@ -170,6 +179,34 @@ export function GraphView() {
       </div>
     </div>
   );
+}
+
+function ResizeHandle({ onResize }: { onResize: (deltaX: number) => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Resize graph sidebar"
+      className="absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize bg-transparent transition hover:bg-violet/20"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        let lastX = event.clientX;
+        const move = (moveEvent: PointerEvent) => {
+          onResize(moveEvent.clientX - lastX);
+          lastX = moveEvent.clientX;
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up, { once: true });
+      }}
+    />
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function Legend({ color, label }: { color: string; label: string }) {

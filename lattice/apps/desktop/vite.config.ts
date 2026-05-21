@@ -21,6 +21,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes("@codemirror") || id.includes("@lezer")) return "codemirror";
+          if (id.includes("@tiptap") || id.includes("prosemirror") || id.includes("tiptap-markdown")) return "tiptap";
           if (id.includes("react-dom") || id.includes("react/")) return "react";
         },
       },

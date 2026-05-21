@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::PluginManifest;
+use crate::manifest::{PluginCompatibilityLevel, PluginCompatibilityReport, PluginManifest};
 use crate::permissions::PermissionGrant;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,10 +15,25 @@ pub struct PluginInfo {
     pub installed_path: String,
     pub manifest: PluginManifest,
     pub granted_permissions: Vec<PermissionGrant>,
+    pub compatibility: PluginCompatibilityReport,
 }
 
 impl PluginInfo {
     pub fn from_manifest(manifest: PluginManifest, installed_path: impl Into<String>) -> Self {
+        let compatibility = manifest.compatibility_report(
+            PluginCompatibilityLevel::Installable,
+            Vec::new(),
+            false,
+            false,
+        );
+        Self::from_manifest_with_compatibility(manifest, installed_path, compatibility)
+    }
+
+    pub fn from_manifest_with_compatibility(
+        manifest: PluginManifest,
+        installed_path: impl Into<String>,
+        compatibility: PluginCompatibilityReport,
+    ) -> Self {
         let granted_permissions = manifest
             .permissions
             .iter()
@@ -40,6 +55,7 @@ impl PluginInfo {
             installed_path: installed_path.into(),
             manifest,
             granted_permissions,
+            compatibility,
         }
     }
 }

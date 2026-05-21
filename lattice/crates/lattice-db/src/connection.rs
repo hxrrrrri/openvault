@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use chrono::Utc;
@@ -6,7 +7,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
 use crate::migrations::MIGRATION_001;
-use crate::repositories::{BacklinkRow, DbLinkRow, DbNoteRow, HealthStats, SearchRow};
+use crate::repositories::{
+    BacklinkRow, DbCollectionRow, DbLinkRow, DbNoteRow, HealthStats, SearchRow,
+};
 
 pub type DbResult<T> = Result<T, DbError>;
 
@@ -235,6 +238,66 @@ impl LatticeDb {
             .prepare("SELECT name FROM tags ORDER BY normalized_name")?;
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn collection_items(&self) -> DbResult<Vec<DbCollectionRow>> {
+        let mut property_stmt = self.conn.prepare(
+            r#"
+            SELECT f.path, p.key, p.value_json
+            FROM properties p
+            JOIN files f ON f.id = p.file_id
+            ORDER BY f.path, p.key
+            "#,
+        )?;
+        let mut properties_by_path: BTreeMap<String, BTreeMap<String, serde_json::Value>> =
+            BTreeMap::new();
+        let property_rows = property_stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in property_rows {
+            let (path, key, value_json) = row?;
+            let value = serde_json::from_str(&value_json).unwrap_or(serde_json::Value::Null);
+            properties_by_path
+                .entry(path)
+                .or_default()
+                .insert(key, value);
+        }
+
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT f.path, n.title, n.excerpt, n.word_count, f.mtime, COALESCE(GROUP_CONCAT(t.name, CHAR(31)), '')
+            FROM notes n
+            JOIN files f ON f.id = n.file_id
+            LEFT JOIN note_tags nt ON nt.file_id = n.file_id
+            LEFT JOIN tags t ON t.id = nt.tag_id
+            GROUP BY f.path, n.title, n.excerpt, n.word_count, f.mtime
+            ORDER BY f.mtime DESC, f.path
+            "#,
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                let path = row.get::<_, String>(0)?;
+                Ok(DbCollectionRow {
+                    properties: properties_by_path.remove(&path).unwrap_or_default(),
+                    path,
+                    title: row.get(1)?,
+                    excerpt: row.get(2)?,
+                    word_count: row.get::<_, i64>(3)? as usize,
+                    modified_at: row.get(4)?,
+                    tags: row
+                        .get::<_, String>(5)?
+                        .split('\u{1f}')
+                        .filter(|tag| !tag.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect(),
+                })
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }

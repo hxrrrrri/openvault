@@ -14,7 +14,10 @@ import type {
   OutgoingLink,
   PermissionGrant,
   PluginInfo,
+  PluginRuntimeBundle,
   SearchResult,
+  TerminalAdapterStatus,
+  TerminalSessionInfo,
   UnlinkedMention,
   UnresolvedLink,
   VaultHealthReport,
@@ -22,6 +25,7 @@ import type {
 } from "@/types/domain";
 import { titleFromMarkdown } from "@/lib/utils";
 import { safeInvoke } from "@/lib/tauri";
+import { listPluginCommands } from "@/features/plugins/plugin-command-registry";
 
 interface IndexingSummary {
   scannedFiles: number;
@@ -30,16 +34,80 @@ interface IndexingSummary {
   durationMs: number;
 }
 
+export interface ImportedAsset {
+  path: string;
+  fileName: string;
+  mime: string;
+}
+
 export const coreCommands: CommandItem[] = [
-  { id: "note.new", group: "Quick Actions", label: "New note", hint: "Ctrl N", kind: "command", icon: "plus" },
-  { id: "note.daily", group: "Quick Actions", label: "Open daily note", hint: "Ctrl Shift D", kind: "command", icon: "calendar" },
-  { id: "collections.open", group: "Quick Actions", label: "Open collections", kind: "command", icon: "table" },
-  { id: "ai.open", group: "Quick Actions", label: "Open AI console", kind: "command", icon: "sparkles" },
-  { id: "canvas.open", group: "Quick Actions", label: "Open canvas", hint: "Ctrl Shift C", kind: "command", icon: "layout" },
-  { id: "graph.open", group: "Quick Actions", label: "Open graph", hint: "Ctrl G", kind: "command", icon: "sphere" },
-  { id: "health.open", group: "Quick Actions", label: "Open vault health", kind: "command", icon: "shield" },
-  { id: "plugins.open", group: "Quick Actions", label: "Open plugin marketplace", kind: "command", icon: "puzzle" },
-  { id: "settings.permissions", group: "Settings", label: "Plugin permissions", kind: "setting", icon: "shield" },
+  {
+    id: "note.new",
+    group: "Quick Actions",
+    label: "New note",
+    hint: "Ctrl N",
+    kind: "command",
+    icon: "plus",
+  },
+  {
+    id: "note.daily",
+    group: "Quick Actions",
+    label: "Open daily note",
+    hint: "Ctrl Shift D",
+    kind: "command",
+    icon: "calendar",
+  },
+  {
+    id: "collections.open",
+    group: "Quick Actions",
+    label: "Open collections",
+    kind: "command",
+    icon: "table",
+  },
+  {
+    id: "ai.open",
+    group: "Quick Actions",
+    label: "Open terminal",
+    kind: "command",
+    icon: "terminal",
+  },
+  {
+    id: "canvas.open",
+    group: "Quick Actions",
+    label: "Open canvas",
+    hint: "Ctrl Shift C",
+    kind: "command",
+    icon: "layout",
+  },
+  {
+    id: "graph.open",
+    group: "Quick Actions",
+    label: "Open graph",
+    hint: "Ctrl G",
+    kind: "command",
+    icon: "sphere",
+  },
+  {
+    id: "health.open",
+    group: "Quick Actions",
+    label: "Open vault health",
+    kind: "command",
+    icon: "shield",
+  },
+  {
+    id: "plugins.open",
+    group: "Quick Actions",
+    label: "Open plugin marketplace",
+    kind: "command",
+    icon: "puzzle",
+  },
+  {
+    id: "settings.permissions",
+    group: "Settings",
+    label: "Plugin permissions",
+    kind: "setting",
+    icon: "shield",
+  },
 ];
 
 export const commands = {
@@ -85,6 +153,13 @@ export const commands = {
   readAssetDataUrl(path: string, basePath?: string | null) {
     return safeInvoke<string>("read_asset_data_url", { path, basePath });
   },
+  importAsset(request: {
+    fileName: string;
+    bytesBase64: string;
+    attachmentFolder?: string | null;
+  }) {
+    return safeInvoke<ImportedAsset>("import_asset", request);
+  },
   getNoteMetadata(path: string) {
     return safeInvoke<NoteMetadata>("get_note_metadata", { path });
   },
@@ -107,7 +182,11 @@ export const commands = {
     return safeInvoke<UnlinkedMention[]>("get_unlinked_mentions", { path });
   },
   convertUnlinkedMention(sourcePath: string, targetPath: string, line: number) {
-    return safeInvoke<NoteContent>("convert_unlinked_mention", { sourcePath, targetPath, line });
+    return safeInvoke<NoteContent>("convert_unlinked_mention", {
+      sourcePath,
+      targetPath,
+      line,
+    });
   },
   search(query: string) {
     if (!query.trim()) return Promise.resolve<SearchResult[]>([]);
@@ -115,11 +194,15 @@ export const commands = {
   },
   async commandSearch(query: string) {
     try {
-      const remote = await safeInvoke<CommandItem[]>("command_search", { query });
-      return mergeCommands(coreCommands, remote);
+      const remote = await safeInvoke<CommandItem[]>("command_search", {
+        query,
+      });
+      return mergeCommands(mergeCommands(coreCommands, remote), listPluginCommands(query));
     } catch {
       const normalized = query.toLowerCase();
-      return coreCommands.filter((item) => !normalized || item.label.toLowerCase().includes(normalized));
+      return mergeCommands(coreCommands, listPluginCommands(query)).filter(
+        (item) => !normalized || item.label.toLowerCase().includes(normalized),
+      );
     }
   },
   getVaultHealth() {
@@ -131,14 +214,31 @@ export const commands = {
   installPluginFromFolder(path: string) {
     return safeInvoke<PluginInfo>("install_plugin_from_folder", { path });
   },
+  installObsidianPluginsFromVault(path: string) {
+    return safeInvoke<PluginInfo[]>("install_obsidian_plugins_from_vault", {
+      path,
+    });
+  },
   enablePlugin(id: string) {
     return safeInvoke<boolean>("enable_plugin", { id });
   },
   disablePlugin(id: string) {
     return safeInvoke<boolean>("disable_plugin", { id });
   },
+  readPluginRuntimeBundle(id: string) {
+    return safeInvoke<PluginRuntimeBundle>("read_plugin_runtime_bundle", { id });
+  },
+  readPluginData(id: string) {
+    return safeInvoke<string | null>("read_plugin_data", { id });
+  },
+  writePluginData(id: string, data: string) {
+    return safeInvoke<boolean>("write_plugin_data", { id, data });
+  },
   updatePluginPermissions(id: string, permissions: PermissionGrant[]) {
-    return safeInvoke<boolean>("update_plugin_permissions", { id, permissions });
+    return safeInvoke<boolean>("update_plugin_permissions", {
+      id,
+      permissions,
+    });
   },
   listCollectionItems(query: CollectionQuery) {
     return safeInvoke<CollectionItem[]>("list_collection_items", { query });
@@ -149,9 +249,46 @@ export const commands = {
   runAiCli(request: AiCliRunRequest) {
     return safeInvoke<AiCliRunResult>("run_ai_cli", { request });
   },
+  listTerminalAdapters() {
+    return safeInvoke<TerminalAdapterStatus[]>("list_terminal_adapters");
+  },
+  listTerminalSessions() {
+    return safeInvoke<TerminalSessionInfo[]>("list_terminal_sessions");
+  },
+  startTerminalSession(request: {
+    cliId: string;
+    cols?: number;
+    rows?: number;
+  }) {
+    return safeInvoke<TerminalSessionInfo>("start_terminal_session", {
+      request,
+    });
+  },
+  getTerminalHistory(sessionId: string) {
+    return safeInvoke<string[]>("get_terminal_history", { sessionId });
+  },
+  writeTerminalInput(sessionId: string, data: string) {
+    return safeInvoke<boolean>("write_terminal_input", { sessionId, data });
+  },
+  resizeTerminalSession(request: {
+    sessionId: string;
+    cols: number;
+    rows: number;
+  }) {
+    return safeInvoke<boolean>("resize_terminal_session", { request });
+  },
+  killTerminalSession(sessionId: string) {
+    return safeInvoke<boolean>("kill_terminal_session", { sessionId });
+  },
+  killAllTerminalSessions() {
+    return safeInvoke<boolean>("kill_all_terminal_sessions");
+  },
 };
 
-function mergeCommands(local: CommandItem[], remote: CommandItem[]): CommandItem[] {
+function mergeCommands(
+  local: CommandItem[],
+  remote: CommandItem[],
+): CommandItem[] {
   const byId = new Map<string, CommandItem>();
   for (const item of [...local, ...remote]) {
     byId.set(item.id, item);

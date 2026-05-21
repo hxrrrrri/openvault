@@ -1,10 +1,11 @@
-import { BrainCircuit, Check, Code2, Download, Palette, Puzzle, Shield } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, BrainCircuit, Check, Code2, Download, Monitor, Palette, Puzzle, Shield } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { GlowCard } from "@/components/ui/GlowCard";
 import { commands } from "@/lib/commands";
 import type { PermissionGrant, PluginInfo } from "@/types/domain";
 import { PermissionModal } from "@/components/plugins/PermissionModal";
+import { createObsidianPluginHost } from "@/features/plugins/obsidian-host";
 
 const categories = ["All", "Editor", "Query", "Productivity", "AI", "Theme"];
 
@@ -12,6 +13,8 @@ export function PluginMarketplace() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [filter, setFilter] = useState("All");
   const [modalPlugin, setModalPlugin] = useState<PluginInfo | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const obsidianHost = useMemo(() => createObsidianPluginHost(), []);
 
   useEffect(() => {
     void commands.listPlugins().then(setPlugins);
@@ -28,13 +31,51 @@ export function PluginMarketplace() {
     const path = window.prompt("Plugin folder path", "C:/path/to/plugin");
     if (!path) return;
     const plugin = await commands.installPluginFromFolder(path);
-    setPlugins((current) => [plugin, ...current.filter((item) => item.id !== plugin.id)]);
+    mergeInstalledPlugins([plugin]);
+    setInstallNotice(`Installed ${plugin.name}`);
+  }
+
+  async function importObsidianPlugins() {
+    const path = window.prompt("Obsidian vault path or .obsidian/plugins folder", "C:/path/to/Obsidian Vault");
+    if (!path) return;
+    const imported = await commands.installObsidianPluginsFromVault(path);
+    mergeInstalledPlugins(imported);
+    setInstallNotice(
+      imported.length
+        ? `Imported ${imported.length} Obsidian plugin${imported.length === 1 ? "" : "s"}`
+        : "No Obsidian plugin folders found",
+    );
+  }
+
+  function mergeInstalledPlugins(next: PluginInfo[]) {
+    const ids = new Set(next.map((plugin) => plugin.id));
+    setPlugins((current) => [...next, ...current.filter((item) => !ids.has(item.id))]);
+  }
+
+  function setInstallNotice(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 2400);
   }
 
   async function setPluginEnabled(plugin: PluginInfo, enabled: boolean) {
-    if (enabled) await commands.enablePlugin(plugin.id);
-    else await commands.disablePlugin(plugin.id);
-    setPlugins((current) => current.map((item) => (item.id === plugin.id ? { ...item, enabled } : item)));
+    if (enabled) {
+      if (plugin.manifest.ecosystem === "obsidian") await obsidianHost.enable(plugin);
+      await commands.enablePlugin(plugin.id);
+    } else {
+      await obsidianHost.disable(plugin.id);
+      await commands.disablePlugin(plugin.id);
+    }
+    setPlugins((current) =>
+      current.map((item) =>
+        item.id === plugin.id
+          ? {
+              ...item,
+              enabled,
+              compatibility: enabled && item.manifest.ecosystem === "obsidian" ? { ...item.compatibility, level: "functional" } : item.compatibility,
+            }
+          : item,
+      ),
+    );
   }
 
   return (
@@ -44,19 +85,25 @@ export function PluginMarketplace() {
           <div className="pixel-label text-[11px]">Plugin marketplace</div>
           <h1 className="mt-1 text-3xl font-semibold tracking-normal">Extend your vault, safely.</h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-3)]">
-            Every plugin declares permissions. LATTICE stores grants separately so access can be reviewed and revoked.
+            Native LATTICE plugins and Obsidian plugin folders install through the same permission review path.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="chip chip-success mono">
-            <Check size={11} /> SANDBOX PLANNED
+            <Check size={11} /> OBSIDIAN MANIFESTS
           </span>
+          <Button onClick={() => void importObsidianPlugins()}>Import Obsidian vault</Button>
           <Button onClick={() => void installPlugin()}>Install from folder</Button>
         </div>
       </header>
+      {notice && (
+        <div className="mb-4 rounded-lg border border-emerald-300/25 bg-emerald-400/10 px-3 py-2 text-xs text-[var(--success)]">
+          {notice}
+        </div>
+      )}
 
       <section className="gradient-card mb-6 flex min-h-[180px] items-center gap-7 p-7">
-        <div className="grid size-28 shrink-0 place-items-center rounded-[22px] border border-white/15 bg-gradient-to-br from-[#1a1530] to-[#0e0e1a] text-[var(--violet-2)] shadow-[0_0_24px_rgba(139,124,255,0.3)]">
+        <div className="grid size-28 shrink-0 place-items-center rounded-[22px] border border-violet/25 bg-gradient-to-br from-[#1a1530] to-[#0e0e1a] text-[var(--violet-2)] shadow-[0_0_24px_rgba(139,124,255,0.3)]">
           <BrainCircuit size={48} />
         </div>
         <div className="min-w-0 flex-1">
@@ -65,10 +112,12 @@ export function PluginMarketplace() {
             <h2 className="text-2xl font-semibold">Install from a folder</h2>
             <span className="chip chip-success mono text-[10px]">OSS</span>
           </div>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-white/75">Plugins are loaded from real local manifests. No marketplace data is mocked into a new vault.</p>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-white/75">
+            Install native plugins or existing Obsidian community plugin folders containing manifest.json and main.js. Obsidian plugins receive a compatibility badge and broad permissions stay off until reviewed.
+          </p>
         </div>
-        <Button variant="primary" onClick={() => void installPlugin()}>
-          Install
+        <Button variant="primary" onClick={() => void importObsidianPlugins()}>
+          Import plugins
         </Button>
       </section>
 
@@ -77,8 +126,10 @@ export function PluginMarketplace() {
           <button
             key={category}
             onClick={() => setFilter(category)}
-            className={`rounded-full border px-3 py-1.5 text-xs transition ${
-              filter === category ? "border-violet/50 bg-violet/15 text-[var(--text)] shadow-[0_0_12px_rgba(139,124,255,0.25)]" : "border-[var(--border)] bg-white/[0.02] text-[var(--text-2)]"
+            className={`rounded-full px-3 py-1.5 text-xs transition ${
+              filter === category
+                ? "bg-violet/15 text-[var(--text)] shadow-[0_0_12px_rgba(139,124,255,0.22),inset_0_0_0_1px_rgba(169,155,255,0.24)]"
+                : "bg-white/[0.02] text-[var(--text-2)] shadow-[inset_0_0_0_1px_rgba(139,124,255,0.12)] hover:shadow-[inset_0_0_0_1px_rgba(169,155,255,0.22)]"
             }`}
           >
             {category}
@@ -129,20 +180,49 @@ function PluginCard({ plugin, onOpenPermissions, onToggleEnabled }: { plugin: Pl
           </div>
           <div className="mono mt-0.5 text-[11px] text-[var(--text-3)]">by {plugin.author}</div>
         </div>
-        <span className="chip mono text-[10px]">
-          <Download size={10} /> local
+        <span className={`chip mono text-[10px] ${plugin.manifest.ecosystem === "obsidian" ? "chip-violet" : ""}`}>
+          <Download size={10} /> {plugin.manifest.ecosystem === "obsidian" ? "obsidian" : "local"}
         </span>
       </div>
       <p className="mb-3 flex-1 text-xs leading-5 text-[var(--text-2)]">{plugin.description}</p>
       <div className="mb-3 flex flex-wrap gap-1">
-        {plugin.grantedPermissions.map((grant) => (
-          <span key={grant.permission} className={`chip mono text-[9px] ${grant.granted ? "chip-violet" : ""}`}>
-            {grant.permission}
+        <span className="chip mono text-[9px]">
+          ecosystem: {plugin.manifest.ecosystem === "obsidian" ? "Obsidian" : "LATTICE"}
+        </span>
+        <span className="chip chip-success mono text-[9px]">compat: {plugin.compatibility.level}</span>
+        {plugin.compatibility.desktopOnly && (
+          <span className="chip chip-warning mono text-[9px]">
+            <Monitor size={10} /> desktop-only
           </span>
-        ))}
+        )}
+      </div>
+      {plugin.compatibility.missingApiWarnings.length > 0 && (
+        <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] leading-4 text-amber-100/80">
+          <div className="mb-1 flex items-center gap-1 font-medium text-amber-100">
+            <AlertTriangle size={12} /> Missing API warnings
+          </div>
+          {plugin.compatibility.missingApiWarnings.slice(0, 2).map((warning) => (
+            <div key={warning} className="truncate">
+              {warning}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mb-3 flex flex-wrap gap-1">
+        {plugin.compatibility.requestedPermissions.map((permission) => {
+          const grant = plugin.grantedPermissions.find((item) => item.permission === permission);
+          return (
+            <span key={permission} className={`chip mono text-[9px] ${grant?.granted ? "chip-violet" : ""}`}>
+              {permission}
+            </span>
+          );
+        })}
       </div>
       <div className="mt-auto flex items-center gap-2 border-t border-[var(--border)] pt-3">
-        <span className="chip chip-success mono text-[9px]">OSS</span>
+        <span className="chip chip-success mono text-[9px]">
+          {plugin.manifest.ecosystem === "obsidian" ? "OBSIDIAN COMPAT" : "LATTICE"}
+        </span>
+        {plugin.manifest.isDesktopOnly && <span className="chip chip-warning mono text-[9px]">DESKTOP API</span>}
         <span className="chip mono text-[9px]">{grantedCount} grants</span>
         <Button className="py-1.5 text-[11px]" variant={plugin.enabled ? "ghost" : "primary"} onClick={() => onToggleEnabled(!plugin.enabled)}>
           {plugin.enabled ? "Disable" : "Enable"}

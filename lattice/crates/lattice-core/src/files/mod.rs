@@ -46,11 +46,7 @@ pub fn scan_file_tree(vault: &Vault) -> CoreResult<Vec<FileNode>> {
     for entry in fs::read_dir(&vault.root)? {
         let entry = entry?;
         let path = entry.path();
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name == ".lattice")
-        {
+        if should_ignore_path(&path) {
             continue;
         }
         roots.push(node_from_path(vault, &path)?);
@@ -66,6 +62,7 @@ pub fn scan_file_tree(vault: &Vault) -> CoreResult<Vec<FileNode>> {
 pub fn list_markdown_files(vault: &Vault) -> Vec<PathBuf> {
     WalkDir::new(&vault.root)
         .into_iter()
+        .filter_entry(|entry| entry.depth() == 0 || !should_ignore_path(entry.path()))
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .map(|entry| entry.into_path())
@@ -73,11 +70,6 @@ pub fn list_markdown_files(vault: &Vault) -> Vec<PathBuf> {
             path.extension()
                 .and_then(|ext| ext.to_str())
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-        })
-        .filter(|path| {
-            !path
-                .components()
-                .any(|component| component.as_os_str() == ".lattice")
         })
         .collect()
 }
@@ -149,11 +141,7 @@ fn node_from_path(vault: &Vault, path: &Path) -> CoreResult<FileNode> {
     if metadata.is_dir() {
         for entry in fs::read_dir(path)? {
             let entry = entry?;
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name == ".lattice")
-            {
+            if should_ignore_path(&entry.path()) {
                 continue;
             }
             children.push(node_from_path(vault, &entry.path())?);
@@ -183,6 +171,30 @@ fn node_from_path(vault: &Vault, path: &Path) -> CoreResult<FileNode> {
         modified_at: Some(modified_at(&metadata)),
         is_markdown,
     })
+}
+
+fn should_ignore_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            matches!(
+                name,
+                ".git"
+                    | ".hg"
+                    | ".lattice"
+                    | ".obsidian"
+                    | ".pnpm-store"
+                    | ".turbo"
+                    | ".vite"
+                    | ".next"
+                    | "node_modules"
+                    | "target"
+                    | "dist"
+                    | "build"
+                    | "out"
+                    | "coverage"
+            )
+        })
 }
 
 fn normalize_relative(vault: &Vault, path: &Path) -> String {

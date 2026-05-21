@@ -17,7 +17,7 @@ export function Button({ className, variant = "default", icon, children, ...prop
         variant === "default" &&
           "border-[var(--border)] bg-white/[0.03] text-[var(--text)] hover:border-[var(--border-strong)] hover:bg-white/[0.06]",
         variant === "primary" &&
-          "border-white/20 bg-gradient-to-b from-[#8B7CFF] to-[#6E5DE8] text-white shadow-[0_8px_24px_-8px_rgba(139,124,255,0.6),inset_0_1px_0_rgba(255,255,255,0.25)] hover:from-[#9c8eff] hover:to-[#7c6cf0]",
+          "border-transparent bg-gradient-to-b from-[#8B7CFF] to-[#6E5DE8] text-white shadow-[0_8px_24px_-8px_rgba(139,124,255,0.6),inset_0_1px_0_rgba(199,188,255,0.22),inset_0_0_0_1px_rgba(139,124,255,0.18)] hover:from-[#9c8eff] hover:to-[#7c6cf0]",
         variant === "ghost" &&
           "border-transparent bg-transparent text-[var(--text-2)] hover:bg-white/[0.04] hover:text-[var(--text)]",
         variant === "danger" &&

@@ -39,10 +39,15 @@ const tabs = [
 export function SettingsScreen() {
   const resetSettings = useSettingsStore((state) => state.resetSettings);
   const [tab, setTab] = useSettingsTab();
+  const [sidebarWidth, setSidebarWidth] = useState(240);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-gradient-to-b from-[#08080c] to-[#050507]">
-      <aside className="w-60 shrink-0 border-r border-[var(--border)] bg-[#08080c]/60 p-4">
+      <aside
+        className="relative shrink-0 border-r border-[var(--border)] bg-[#08080c]/60 p-4"
+        style={{ width: sidebarWidth }}
+      >
+        <ResizeHandle onResize={(delta) => setSidebarWidth((width) => clamp(width + delta, 210, 420))} />
         <div className="pixel-label mb-3 px-2 text-[10px]">Settings</div>
         <div className="space-y-1">
           {tabs.map((item) => (
@@ -291,7 +296,7 @@ function PermissionsSettings() {
       <div className="pixel-label text-[11px]">Plugin permissions</div>
       <h1 className="mt-1 text-2xl font-semibold tracking-normal">You're in control.</h1>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-3)]">
-        Every plugin action should be attributable to an explicit grant. This MVP stores grants now and keeps runtime execution constrained until sandboxing is complete.
+        Every plugin action should be attributable to an explicit grant. Obsidian plugins run through an isolated worker shim with gated vault, workspace, UI, storage, network, and desktop adapters.
       </p>
       <div className="mt-6">
         <PluginMarketplace />
@@ -411,6 +416,34 @@ function RangeRow({ label, value, min, max, step, suffix, onChange }: { label: s
       <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className="w-full accent-[#8B7CFF]" />
     </GlowCard>
   );
+}
+
+function ResizeHandle({ onResize }: { onResize: (deltaX: number) => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Resize settings sidebar"
+      className="absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize bg-transparent transition hover:bg-violet/20"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        let lastX = event.clientX;
+        const move = (moveEvent: PointerEvent) => {
+          onResize(moveEvent.clientX - lastX);
+          lastX = moveEvent.clientX;
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up, { once: true });
+      }}
+    />
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function TextRow({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {

@@ -52,14 +52,14 @@ export function VaultHealthDashboard() {
         </div>
       </header>
 
-      <section className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
-        <div className="gradient-card min-h-[200px] p-6">
-          <div className="pixel-label text-[10px] text-white/70">Vault health score</div>
-          <div className="mt-4 flex items-end gap-5">
+      <section className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.45fr_1fr_1fr_1fr]">
+        <div className="gradient-card min-h-[200px] overflow-visible p-6">
+          <div className="pixel-label text-[10px] text-[var(--text-2)]">Vault health score</div>
+          <div className="mt-4 grid grid-cols-[132px_1fr] items-center gap-5">
             <HealthRing score={report.score} />
-            <div className="pb-4">
+            <div className="min-w-0">
               <div className="text-base font-medium">Strong and growing</div>
-              <p className="mt-1 max-w-xs text-xs leading-5 text-white/70">
+              <p className="mt-1 max-w-xs text-xs leading-5 text-[var(--text-2)]">
                 Connect orphan notes and resolve broken links to improve retrieval quality and graph density.
               </p>
             </div>
@@ -120,19 +120,19 @@ export function VaultHealthDashboard() {
 }
 
 function HealthRing({ score }: { score: number }) {
-  const size = 132;
+  const size = 124;
   const r = (size - 12) / 2;
   const c = 2 * Math.PI * r;
   const off = c - (score / 100) * c;
   return (
-    <svg width={size} height={size} className="drop-shadow-[0_0_16px_rgba(139,124,255,0.5)]">
+    <svg width={size} height={size} className="shrink-0 overflow-visible drop-shadow-[0_0_16px_rgba(139,124,255,0.5)]">
       <defs>
         <linearGradient id="health-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#A99BFF" />
           <stop offset="100%" stopColor="#6D8DFF" />
         </linearGradient>
       </defs>
-      <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth="6" fill="none" />
+      <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(116,107,158,0.32)" strokeWidth="6" fill="none" />
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -145,10 +145,10 @@ function HealthRing({ score }: { score: number }) {
         strokeDashoffset={off}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
       />
-      <text x={size / 2} y={size / 2 + 6} textAnchor="middle" fill="white" fontSize="34" fontWeight="600">
+      <text x={size / 2} y={size / 2 + 6} textAnchor="middle" fill="var(--text)" fontSize="34" fontWeight="600">
         {score}
       </text>
-      <text x={size / 2} y={size / 2 + 25} textAnchor="middle" fill="rgba(255,255,255,0.65)" fontSize="9" letterSpacing="2">
+      <text x={size / 2} y={size / 2 + 25} textAnchor="middle" fill="var(--text-2)" fontSize="9" letterSpacing="2">
         /100
       </text>
     </svg>
@@ -163,7 +163,9 @@ function Kpi({ icon, label, value, tone }: { icon: ReactNode; label: string; val
   };
   return (
     <div className={`card relative min-h-[200px] overflow-hidden p-5 ${colors[tone]}`}>
-      <div className="absolute -right-2 -top-2 opacity-25">{icon}</div>
+      <div className="absolute right-4 top-4 grid size-12 place-items-center rounded-xl bg-[#0b0b12]/70 opacity-40 shadow-[inset_0_0_0_1px_rgba(139,124,255,0.14)]">
+        {icon}
+      </div>
       <div className="pixel-label text-[10px]">{label}</div>
       <div className="mt-9 text-5xl font-semibold leading-none">{value}</div>
       <div className="mt-3 text-xs text-[var(--text-3)]">tracked from current index</div>

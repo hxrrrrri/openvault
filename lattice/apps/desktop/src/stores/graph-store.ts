@@ -30,11 +30,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   filters: { includeOrphans: true, depth: 2 },
   async loadGraph() {
     const graph = await commands.getGlobalGraph(get().filters).catch(() => ({ nodes: [], edges: [] }));
-    set({ graph, selectedNodeId: graph.nodes[0]?.id ?? null });
+    const current = get().selectedNodeId;
+    set({ graph, selectedNodeId: graph.nodes.some((node) => node.id === current) ? current : null });
   },
   async loadLocalGraph(path) {
     const graph = await commands.getLocalGraph(path, get().filters.depth ?? 2).catch(() => ({ nodes: [], edges: [] }));
-    set({ graph, selectedNodeId: graph.nodes[0]?.id ?? null });
+    const current = get().selectedNodeId;
+    set({ graph, selectedNodeId: graph.nodes.some((node) => node.id === current) ? current : null });
   },
   setMode: (mode) => set({ mode }),
   setLabelMode: (labelMode) => set({ labelMode }),

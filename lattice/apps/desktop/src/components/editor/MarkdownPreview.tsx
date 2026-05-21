@@ -1,8 +1,14 @@
+import "katex/dist/katex.min.css";
+
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { isValidElement, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { commands } from "@/lib/commands";
+import type { CollectionItem, CollectionQuery, SearchResult } from "@/types/domain";
 
 interface MarkdownPreviewProps {
   content: string;
@@ -23,42 +29,110 @@ interface Segment {
 
 function preprocess(content: string): string {
   return content
-    .replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_match, rawTarget: string, width?: string) => {
-      const target = rawTarget.trim();
-      const label = target.split("#")[0];
-      const query = width ? `?width=${encodeURIComponent(width.trim())}` : "";
-      return `![${label}](lattice-asset://${encodeURIComponent(target)}${query})`;
-    })
-    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_match, rawTarget: string, alias?: string) => {
-      const target = rawTarget.trim();
-      const label = alias || target.split("#")[0];
-      return `[${label}](lattice://note/${encodeURIComponent(target)})`;
-    });
+    .replace(/%%[\s\S]*?%%/g, "")
+    .replace(/==([\s\S]*?)==/g, "<mark>$1</mark>")
+    .replace(
+      /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+      (_match, rawTarget: string, width?: string) => {
+        const target = rawTarget.trim();
+        const label = target.split("#")[0];
+        const query = width ? `?width=${encodeURIComponent(width.trim())}` : "";
+        return `![${label}](lattice-asset://${encodeURIComponent(target)}${query})`;
+      },
+    )
+    .replace(
+      /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+      (_match, rawTarget: string, alias?: string) => {
+        const target = rawTarget.trim();
+        const label = alias || target.split("#")[0];
+        return `[${label}](lattice://note/${encodeURIComponent(target)})`;
+      },
+    );
 }
 
-export function MarkdownPreview({ content, notePath, onOpenNote }: MarkdownPreviewProps) {
+export function MarkdownPreview({
+  content,
+  notePath,
+  onOpenNote,
+}: MarkdownPreviewProps) {
   const segments = splitCallouts(content);
   return (
-    <article className="prose prose-invert max-w-none prose-headings:tracking-normal prose-a:text-[var(--violet-2)] prose-code:text-[var(--indigo)]">
+    <article className="prose prose-invert max-w-none prose-headings:tracking-tight prose-a:text-[var(--violet-2)] prose-code:text-[var(--indigo)] lattice-prose">
       {segments.map((segment, index) =>
         segment.kind === "callout" && segment.callout ? (
-          <Callout key={`${segment.kind}-${index}`} callout={segment.callout} notePath={notePath} onOpenNote={onOpenNote} />
+          <Callout
+            key={`${segment.kind}-${index}`}
+            callout={segment.callout}
+            notePath={notePath}
+            onOpenNote={onOpenNote}
+          />
         ) : (
-          <MarkdownChunk key={`${segment.kind}-${index}`} content={segment.content} notePath={notePath} onOpenNote={onOpenNote} />
+          <MarkdownChunk
+            key={`${segment.kind}-${index}`}
+            content={segment.content}
+            notePath={notePath}
+            onOpenNote={onOpenNote}
+          />
         ),
       )}
     </article>
   );
 }
 
-function MarkdownChunk({ content, notePath, onOpenNote }: { content: string; notePath?: string; onOpenNote?: (target: string) => void }) {
+function MarkdownChunk({
+  content,
+  notePath,
+  onOpenNote,
+}: {
+  content: string;
+  notePath?: string;
+  onOpenNote?: (target: string) => void;
+}) {
   if (!content.trim()) return null;
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeRaw, rehypeKatex]}
       components={{
-        a: ({ href, children }) => <PreviewLink href={href} onOpenNote={onOpenNote}>{children}</PreviewLink>,
-        img: ({ src, alt }) => <PreviewImage src={src} alt={alt ?? ""} notePath={notePath} />,
+        a: ({ href, children }) => (
+          <PreviewLink href={href} onOpenNote={onOpenNote}>
+            {children}
+          </PreviewLink>
+        ),
+        code: ({ className, children, ...props }) => {
+          const language = /language-([\w-]+)/
+            .exec(className ?? "")?.[1]
+            ?.toLowerCase();
+          const source = String(children).replace(/\n$/, "");
+          if (language === "mermaid") {
+            return <MermaidDiagram chart={source} />;
+          }
+          if (language === "query") {
+            return <EmbeddedSearch query={source} onOpenNote={onOpenNote} />;
+          }
+          if (language === "lattice-query" || language === "lattice-database") {
+            return <EmbeddedCollection source={source} onOpenNote={onOpenNote} />;
+          }
+          return (
+            <code className={className} {...props}>
+              {children}
+            </code>
+          );
+        },
+        img: ({ src, alt }) => (
+          <PreviewImage src={src} alt={alt ?? ""} notePath={notePath} />
+        ),
+        mark: ({ children }) => (
+          <mark className="rounded bg-amber-300/25 px-1 text-amber-100">
+            {children}
+          </mark>
+        ),
+        pre: ({ children }) =>
+          isValidElement(children) && typeof children.type !== "string" ? (
+            <>{children}</>
+          ) : (
+            <pre>{children}</pre>
+          ),
       }}
     >
       {preprocess(content)}
@@ -66,7 +140,230 @@ function MarkdownChunk({ content, notePath, onOpenNote }: { content: string; not
   );
 }
 
-function PreviewImage({ src, alt, notePath }: { src?: string; alt: string; notePath?: string }) {
+function MermaidDiagram({ chart }: { chart: string }) {
+  const [svg, setSvg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const id = useMemo(() => `lattice-mermaid-${hashString(chart)}`, [chart]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSvg(null);
+    setError(null);
+    void import("mermaid")
+      .then(async (module) => {
+        const mermaid = module.default;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+          securityLevel: "strict",
+          fontFamily: "Inter, ui-sans-serif, system-ui",
+        });
+        const result = await mermaid.render(id, chart);
+        if (!cancelled) setSvg(result.svg);
+      })
+      .catch((error) => {
+        if (!cancelled)
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Could not render Mermaid diagram",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chart, id]);
+
+  if (error) {
+    return (
+      <pre className="my-4 overflow-auto rounded-lg border border-red-400/25 bg-red-500/5 p-3 text-xs text-[var(--danger)]">
+        {error}
+        {"\n\n"}
+        {chart}
+      </pre>
+    );
+  }
+
+  if (!svg) {
+    return (
+      <div className="my-4 rounded-lg border border-[var(--border)] bg-white/[0.025] px-3 py-2 text-xs text-[var(--text-3)]">
+        Rendering diagram...
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="my-4 overflow-auto rounded-lg border border-[var(--border)] bg-[#08080c] p-4"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}
+
+function EmbeddedSearch({
+  query,
+  onOpenNote,
+}: {
+  query: string;
+  onOpenNote?: (target: string) => void;
+}) {
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    void commands
+      .search(query)
+      .then((next) => {
+        if (!cancelled) setResults(next.slice(0, 12));
+      })
+      .catch(() => {
+        if (!cancelled) setResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
+
+  return (
+    <div className="my-4 overflow-hidden rounded-lg border border-[var(--border)] bg-white/[0.025]">
+      <div className="border-b border-[var(--border)] px-3 py-2 text-[10px] uppercase tracking-[0.12em] text-[var(--text-3)]">
+        Query {loading ? "..." : `- ${results.length} results`}
+      </div>
+      <div className="divide-y divide-[var(--border)]">
+        {results.map((result) => (
+          <button
+            key={result.path}
+            type="button"
+            className="block w-full px-3 py-2 text-left hover:bg-white/[0.03]"
+            onClick={() => onOpenNote?.(result.path)}
+          >
+            <span className="block text-sm text-[var(--violet-2)]">
+              {result.title}
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-[var(--text-3)]">
+              {result.excerpt}
+            </span>
+            <span className="mono mt-1 block text-[10px] text-[var(--text-4)]">
+              {result.path}
+            </span>
+          </button>
+        ))}
+        {!results.length && (
+          <div className="px-3 py-3 text-xs text-[var(--text-3)]">
+            {loading ? "Searching..." : "No results."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EmbeddedCollection({
+  source,
+  onOpenNote,
+}: {
+  source: string;
+  onOpenNote?: (target: string) => void;
+}) {
+  const spec = useMemo(() => parseCollectionQuery(source), [source]);
+  const [items, setItems] = useState<CollectionItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void commands
+      .listCollectionItems(spec.query)
+      .then((next) => {
+        if (!cancelled) setItems(next);
+      })
+      .catch(() => {
+        if (!cancelled) setItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [spec.query]);
+
+  const columns = spec.columns.length
+    ? spec.columns
+    : inferCollectionColumns(items).slice(0, 5);
+
+  return (
+    <div className="my-4 overflow-hidden rounded-lg border border-[#2f2a55] bg-[#0d0d14] shadow-[0_18px_48px_rgba(0,0,0,0.28)]">
+      <div className="flex items-center gap-2 border-b border-[#28243c] bg-[#15151e] px-3 py-2">
+        <span className="pixel-label text-[10px]">Lattice query</span>
+        <span className="mono ml-auto text-[10px] text-[var(--text-3)]">
+          {loading ? "loading" : `${items.length} notes`}
+        </span>
+      </div>
+      <div className="overflow-auto">
+        <table className="w-full min-w-[520px] border-collapse text-left text-xs">
+          <thead className="text-[var(--text-3)]">
+            <tr>
+              {columns.map((column) => (
+                <th key={column} className="border-b border-[#28243c] px-3 py-2 font-medium">
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.path} className="border-b border-[#211f31] last:border-b-0 hover:bg-violet/5">
+                {columns.map((column) => (
+                  <td key={column} className="max-w-[260px] truncate px-3 py-2 text-[var(--text-2)]">
+                    {column === "title" ? (
+                      <button
+                        type="button"
+                        className="text-left font-medium text-[var(--violet-2)] hover:text-white"
+                        onClick={() => onOpenNote?.(item.path)}
+                        title={item.path}
+                      >
+                        {item.title}
+                      </button>
+                    ) : (
+                      collectionValue(item, column)
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {!items.length && (
+              <tr>
+                <td className="px-3 py-4 text-[var(--text-3)]" colSpan={Math.max(1, columns.length)}>
+                  {loading ? "Loading collection..." : "No matching notes."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PreviewImage({
+  src,
+  alt,
+  notePath,
+}: {
+  src?: string;
+  alt: string;
+  notePath?: string;
+}) {
   const [resolved, setResolved] = useState<string | null>(src ?? null);
   const localAsset = src?.startsWith("lattice-asset://");
   const width = localAsset && src ? widthFromAssetUrl(src) : null;
@@ -77,7 +374,9 @@ function PreviewImage({ src, alt, notePath }: { src?: string; alt: string; noteP
       return;
     }
     let cancelled = false;
-    const target = decodeURIComponent(src.replace(/^lattice-asset:\/\//, "").split("?")[0]);
+    const target = decodeURIComponent(
+      src.replace(/^lattice-asset:\/\//, "").split("?")[0],
+    );
     void commands
       .readAssetDataUrl(target, notePath)
       .then((dataUrl) => {
@@ -92,11 +391,22 @@ function PreviewImage({ src, alt, notePath }: { src?: string; alt: string; noteP
   }, [localAsset, notePath, src]);
 
   if (!resolved) {
-    return <span className="my-3 block rounded-lg border border-dashed border-[var(--border)] px-3 py-2 text-xs text-[var(--text-3)]">Missing image: {alt}</span>;
+    return (
+      <span className="my-3 block rounded-lg border border-dashed border-[var(--border)] px-3 py-2 text-xs text-[var(--text-3)]">
+        Missing image: {alt}
+      </span>
+    );
   }
 
   if (resolved.startsWith("data:application/pdf")) {
-    return <object data={resolved} type="application/pdf" className="my-4 h-[520px] w-full rounded-lg border border-[var(--border)]" aria-label={alt} />;
+    return (
+      <object
+        data={resolved}
+        type="application/pdf"
+        className="my-4 h-[520px] w-full rounded-lg border border-[var(--border)]"
+        aria-label={alt}
+      />
+    );
   }
 
   if (resolved.startsWith("data:audio/")) {
@@ -104,7 +414,13 @@ function PreviewImage({ src, alt, notePath }: { src?: string; alt: string; noteP
   }
 
   if (resolved.startsWith("data:video/")) {
-    return <video src={resolved} controls className="my-4 max-h-[520px] w-full rounded-lg border border-[var(--border)]" />;
+    return (
+      <video
+        src={resolved}
+        controls
+        className="my-4 max-h-[520px] w-full rounded-lg border border-[var(--border)]"
+      />
+    );
   }
 
   return (
@@ -118,7 +434,15 @@ function PreviewImage({ src, alt, notePath }: { src?: string; alt: string; noteP
   );
 }
 
-function PreviewLink({ href, children, onOpenNote }: { href?: string; children: ReactNode; onOpenNote?: (target: string) => void }) {
+function PreviewLink({
+  href,
+  children,
+  onOpenNote,
+}: {
+  href?: string;
+  children: ReactNode;
+  onOpenNote?: (target: string) => void;
+}) {
   const isNote = href?.startsWith("lattice://note/");
   const isEmbed = href?.startsWith("lattice://embed/");
   if (!isNote && !isEmbed) {
@@ -128,7 +452,9 @@ function PreviewLink({ href, children, onOpenNote }: { href?: string; children: 
       </a>
     );
   }
-  const target = decodeURIComponent((href ?? "").replace(/^lattice:\/\/(?:note|embed)\//, ""));
+  const target = decodeURIComponent(
+    (href ?? "").replace(/^lattice:\/\/(?:note|embed)\//, ""),
+  );
   return (
     <button
       type="button"
@@ -141,24 +467,160 @@ function PreviewLink({ href, children, onOpenNote }: { href?: string; children: 
   );
 }
 
-function Callout({ callout, notePath, onOpenNote }: { callout: NonNullable<Segment["callout"]>; notePath?: string; onOpenNote?: (target: string) => void }) {
+function Callout({
+  callout,
+  notePath,
+  onOpenNote,
+}: {
+  callout: NonNullable<Segment["callout"]>;
+  notePath?: string;
+  onOpenNote?: (target: string) => void;
+}) {
   const tone = toneFor(callout.type);
   return (
     <details
       open={!callout.collapsed}
       className={`my-4 rounded-lg border p-0 ${tone.border} ${tone.bg}`}
     >
-      <summary className={`cursor-pointer select-none px-4 py-3 text-sm font-semibold ${tone.text}`}>
+      <summary
+        className={`cursor-pointer select-none px-4 py-3 text-sm font-semibold ${tone.text}`}
+      >
         <span className="mono mr-2 text-[10px] uppercase">{callout.type}</span>
         {callout.title}
       </summary>
       {callout.body.trim() && (
-        <div className="border-t border-white/10 px-4 py-3">
-          <MarkdownChunk content={callout.body} notePath={notePath} onOpenNote={onOpenNote} />
+        <div className="border-t border-[#28243c] px-4 py-3">
+          <MarkdownChunk
+            content={callout.body}
+            notePath={notePath}
+            onOpenNote={onOpenNote}
+          />
         </div>
       )}
     </details>
   );
+}
+
+function parseCollectionQuery(source: string): {
+  query: CollectionQuery;
+  columns: string[];
+} {
+  const query: CollectionQuery = { limit: 50 };
+  const columns = ["title"];
+  for (const rawLine of source.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || line.startsWith("//")) continue;
+
+    const from = line.match(/^from\s+(.+)$/i);
+    if (from) {
+      const value = stripQuotes(from[1].trim());
+      query.folder = value && value.toLowerCase() !== "notes" ? value : null;
+      continue;
+    }
+
+    const where = line.match(/^where\s+(.+)$/i);
+    if (where) {
+      query.propertyFilters = where[1]
+        .split(/\s+and\s+/i)
+        .map(parseCollectionFilter)
+        .filter(Boolean) as NonNullable<CollectionQuery["propertyFilters"]>;
+      continue;
+    }
+
+    const sort = line.match(/^sort\s+([A-Za-z][\w-]*)(?:\s+(asc|desc))?$/i);
+    if (sort) {
+      query.sort = {
+        field: sort[1],
+        direction: (sort[2]?.toLowerCase() as "asc" | "desc" | undefined) ?? "desc",
+      };
+      continue;
+    }
+
+    const limit = line.match(/^limit\s+(\d+)$/i);
+    if (limit) {
+      query.limit = Number(limit[1]);
+      continue;
+    }
+
+    const text = line.match(/^(?:text|search)\s+(.+)$/i);
+    if (text) {
+      query.text = stripQuotes(text[1].trim());
+      continue;
+    }
+
+    const columnLine = line.match(/^columns?\s+(.+)$/i);
+    if (columnLine) {
+      columns.splice(
+        0,
+        columns.length,
+        ...columnLine[1]
+          .split(",")
+          .map((column) => column.trim())
+          .filter(Boolean),
+      );
+    }
+  }
+  if (!columns.includes("title")) columns.unshift("title");
+  return { query, columns };
+}
+
+function parseCollectionFilter(input: string): NonNullable<CollectionQuery["propertyFilters"]>[number] | null {
+  const exists = input.match(/^([A-Za-z][\w-]*)\s+exists$/i);
+  if (exists) {
+    return { key: exists[1], op: "exists" };
+  }
+
+  const match = input.match(/^([A-Za-z][\w-]*)\s*(==|=|!=|>=|<=|>|<|contains)\s*(.+)$/i);
+  if (!match) return null;
+  const [, key, operator, rawValue] = match;
+  return {
+    key,
+    op: operatorToFilter(operator),
+    value: parseQueryValue(rawValue.trim()),
+  };
+}
+
+function operatorToFilter(operator: string): NonNullable<CollectionQuery["propertyFilters"]>[number]["op"] {
+  if (operator === "!=") return "neq";
+  if (operator === ">") return "gt";
+  if (operator === ">=") return "gte";
+  if (operator === "<") return "lt";
+  if (operator === "<=") return "lte";
+  if (operator.toLowerCase() === "contains") return "contains";
+  return "eq";
+}
+
+function parseQueryValue(value: string): unknown {
+  const stripped = stripQuotes(value);
+  if (stripped.toLowerCase() === "true") return true;
+  if (stripped.toLowerCase() === "false") return false;
+  const number = Number(stripped);
+  if (Number.isFinite(number) && stripped.trim() !== "") return number;
+  return stripped;
+}
+
+function stripQuotes(value: string): string {
+  return value.replace(/^["']|["']$/g, "");
+}
+
+function inferCollectionColumns(items: CollectionItem[]): string[] {
+  const properties = Array.from(new Set(items.flatMap((item) => Object.keys(item.properties)))).sort();
+  return ["title", ...properties, "tags", "modifiedAt"];
+}
+
+function collectionValue(item: CollectionItem, column: string): string {
+  if (column === "path") return item.path;
+  if (column === "tags") return item.tags.join(", ");
+  if (column === "modifiedAt") return item.modifiedAt;
+  if (column === "wordCount") return String(item.wordCount);
+  return valueToDisplay(item.properties[column]);
+}
+
+function valueToDisplay(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map(valueToDisplay).filter(Boolean).join(", ");
+  return "";
 }
 
 function widthFromAssetUrl(src: string): number | null {
@@ -214,22 +676,50 @@ function splitCallouts(content: string): Segment[] {
 
 function toneFor(type: string) {
   if (["warning", "caution", "attention"].includes(type)) {
-    return { border: "border-amber-300/25", bg: "bg-amber-400/5", text: "text-[var(--warning)]" };
+    return {
+      border: "border-amber-300/25",
+      bg: "bg-amber-400/5",
+      text: "text-[var(--warning)]",
+    };
   }
   if (["danger", "error", "failure", "bug"].includes(type)) {
-    return { border: "border-red-400/25", bg: "bg-red-500/5", text: "text-[var(--danger)]" };
+    return {
+      border: "border-red-400/25",
+      bg: "bg-red-500/5",
+      text: "text-[var(--danger)]",
+    };
   }
   if (["success", "check", "done"].includes(type)) {
-    return { border: "border-emerald-300/25", bg: "bg-emerald-400/5", text: "text-[var(--success)]" };
+    return {
+      border: "border-emerald-300/25",
+      bg: "bg-emerald-400/5",
+      text: "text-[var(--success)]",
+    };
   }
   if (["quote", "cite"].includes(type)) {
-    return { border: "border-white/15", bg: "bg-white/[0.03]", text: "text-[var(--text-2)]" };
+    return {
+      border: "border-[#312a4d]",
+      bg: "bg-white/[0.03]",
+      text: "text-[var(--text-2)]",
+    };
   }
-  return { border: "border-violet/25", bg: "bg-violet/10", text: "text-[var(--violet-2)]" };
+  return {
+    border: "border-violet/25",
+    bg: "bg-violet/10",
+    text: "text-[var(--violet-2)]",
+  };
 }
 
 function titleFor(type: string) {
   return type
     .replace(/[-_]/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (Math.imul(31, hash) + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm add *)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm --filter @lattice/desktop typecheck)",
+      "Bash(pnpm --filter @lattice/desktop test)",
+      "Skill(firecrawl-search)",
+      "Skill(firecrawl-search:*)",
+      "WebFetch(domain:forum.obsidian.md)",
+      "WebFetch(domain:obsidian.md)"
+    ]
+  }
+}

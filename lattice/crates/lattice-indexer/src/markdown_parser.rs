@@ -1,7 +1,7 @@
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
-use crate::frontmatter::parse_frontmatter;
+use crate::frontmatter::{parse_frontmatter, parse_properties};
 use crate::links::extract_links;
 use crate::metadata::{Heading, NoteMetadata};
 use crate::tags::extract_tags;
@@ -23,7 +23,7 @@ pub fn parse_markdown(path: impl Into<String>, content: &str) -> NoteMetadata {
         headings,
         links: extract_links(content),
         tags: extract_tags(content),
-        properties: parse_frontmatter(content),
+        properties: parse_properties(content),
         tasks: extract_tasks(content),
         word_count: word_count(content),
         line_count: content.lines().count(),

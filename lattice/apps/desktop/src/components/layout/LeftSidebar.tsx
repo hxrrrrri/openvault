@@ -1,22 +1,28 @@
 import { FolderPlus, Hash, Lock, PanelLeftClose, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { IconButton } from "@/components/ui/IconButton";
+import { NewNoteDialog } from "@/components/editor/NewNoteDialog";
 import { FileTree } from "@/components/layout/FileTree";
 import { useUIStore } from "@/stores/ui-store";
 import { useVaultStore } from "@/stores/vault-store";
 
-export function LeftSidebar() {
+interface LeftSidebarProps {
+  width?: number;
+  onResize?: (deltaX: number) => void;
+}
+
+export function LeftSidebar({ width = 270, onResize }: LeftSidebarProps) {
   const setLeftOpen = useUIStore((state) => state.setLeftOpen);
   const createNote = useVaultStore((state) => state.createNote);
   const createFolder = useVaultStore((state) => state.createFolder);
   const vault = useVaultStore((state) => state.vault);
   const tags = useVaultStore((state) => state.tags);
   const [filter, setFilter] = useState("");
+  const [newNoteOpen, setNewNoteOpen] = useState(false);
   const filteredTags = useMemo(() => tags.filter((tag) => tag.toLowerCase().includes(filter.toLowerCase().replace(/^#/, ""))), [filter, tags]);
 
   function promptNotePath() {
-    const path = window.prompt("New note path", `Inbox/Untitled ${Date.now()}.md`);
-    if (path) void createNote(path);
+    setNewNoteOpen(true);
   }
 
   function promptFolderPath() {
@@ -25,7 +31,11 @@ export function LeftSidebar() {
   }
 
   return (
-    <aside className="flex w-[270px] shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-gradient-to-b from-[#0c0c11] to-[#0a0a0e]">
+    <aside
+      className="relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-gradient-to-b from-[#0c0c11] to-[#0a0a0e]"
+      style={{ width }}
+    >
+      <ResizeHandle side="right" label="Resize file explorer" onResize={onResize} />
       <div className="flex items-center justify-between px-3.5 py-3">
         <div className="pixel-label text-[10px]">Vault</div>
         <div className="flex items-center gap-1">
@@ -78,6 +88,47 @@ export function LeftSidebar() {
           <div className="h-full bg-gradient-to-r from-[#4B36B8] to-[#8B7CFF]" style={{ width: `${vault?.indexedPercent ?? 0}%` }} />
         </div>
       </div>
+      {newNoteOpen && (
+        <NewNoteDialog
+          onClose={() => setNewNoteOpen(false)}
+          onCreate={(path, content) => void createNote(path, content)}
+        />
+      )}
     </aside>
+  );
+}
+
+function ResizeHandle({
+  side,
+  label,
+  onResize,
+}: {
+  side: "left" | "right";
+  label: string;
+  onResize?: (deltaX: number) => void;
+}) {
+  if (!onResize) return null;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={`absolute top-0 z-20 h-full w-2 cursor-col-resize bg-transparent transition hover:bg-violet/20 ${
+        side === "left" ? "left-0" : "right-0"
+      }`}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        let lastX = event.clientX;
+        const move = (moveEvent: PointerEvent) => {
+          onResize(moveEvent.clientX - lastX);
+          lastX = moveEvent.clientX;
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up, { once: true });
+      }}
+    />
   );
 }

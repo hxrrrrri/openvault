@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,6 +12,18 @@ pub struct DbNoteRow {
     pub line_count: usize,
     pub mtime: String,
     pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCollectionRow {
+    pub path: String,
+    pub title: String,
+    pub excerpt: String,
+    pub properties: BTreeMap<String, Value>,
+    pub tags: Vec<String>,
+    pub modified_at: String,
+    pub word_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -18,7 +18,12 @@ const tabs = [
   { id: "insights" as const, label: "Insights", icon: <BrainCircuit size={12} /> },
 ];
 
-export function RightSidebar() {
+interface RightSidebarProps {
+  width?: number;
+  onResize?: (deltaX: number) => void;
+}
+
+export function RightSidebar({ width = 330, onResize }: RightSidebarProps) {
   const setRightOpen = useUIStore((state) => state.setRightOpen);
   const activeNote = useVaultStore((state) => state.activeNote);
   const refreshFiles = useVaultStore((state) => state.refreshFiles);
@@ -54,7 +59,11 @@ export function RightSidebar() {
   }
 
   return (
-    <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-gradient-to-b from-[#0c0c11] to-[#0a0a0e]">
+    <aside
+      className="relative flex shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-gradient-to-b from-[#0c0c11] to-[#0a0a0e]"
+      style={{ width }}
+    >
+      <ResizeHandle side="left" label="Resize right sidebar" onResize={onResize} />
       <div className="flex items-center gap-2 px-3 py-2">
         <IconButton label="Collapse right panel" onClick={() => setRightOpen(false)}>
           <PanelRightClose size={14} />
@@ -77,6 +86,41 @@ export function RightSidebar() {
         {tab === "insights" && <Insights />}
       </div>
     </aside>
+  );
+}
+
+function ResizeHandle({
+  side,
+  label,
+  onResize,
+}: {
+  side: "left" | "right";
+  label: string;
+  onResize?: (deltaX: number) => void;
+}) {
+  if (!onResize) return null;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={`absolute top-0 z-20 h-full w-2 cursor-col-resize bg-transparent transition hover:bg-violet/20 ${
+        side === "left" ? "left-0" : "right-0"
+      }`}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        let lastX = event.clientX;
+        const move = (moveEvent: PointerEvent) => {
+          onResize(moveEvent.clientX - lastX);
+          lastX = moveEvent.clientX;
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up, { once: true });
+      }}
+    />
   );
 }
 
