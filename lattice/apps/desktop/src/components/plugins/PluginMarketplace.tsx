@@ -1,8 +1,8 @@
-import { AlertTriangle, BrainCircuit, Check, Code2, Download, Monitor, Palette, Puzzle, Shield } from "lucide-react";
+import { AlertTriangle, BrainCircuit, Check, Code2, Download, Monitor, Palette, Puzzle, RefreshCw, Search, Shield } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { GlowCard } from "@/components/ui/GlowCard";
-import { commands } from "@/lib/commands";
+import { commands, type ObsidianCommunityPlugin } from "@/lib/commands";
 import type { PermissionGrant, PluginInfo } from "@/types/domain";
 import { PermissionModal } from "@/components/plugins/PermissionModal";
 import { createObsidianPluginHost } from "@/features/plugins/obsidian-host";
@@ -11,6 +11,11 @@ const categories = ["All", "Editor", "Query", "Productivity", "AI", "Theme"];
 
 export function PluginMarketplace() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
+  const [community, setCommunity] = useState<ObsidianCommunityPlugin[]>([]);
+  const [communityQuery, setCommunityQuery] = useState("");
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityError, setCommunityError] = useState<string | null>(null);
+  const [installingIds, setInstallingIds] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState("All");
   const [modalPlugin, setModalPlugin] = useState<PluginInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -21,6 +26,17 @@ export function PluginMarketplace() {
   }, []);
 
   const visible = plugins.filter((plugin) => filter === "All" || categoryFor(plugin) === filter);
+  const installedIds = useMemo(() => new Set(plugins.map((plugin) => plugin.id)), [plugins]);
+  const visibleCommunity = useMemo(() => {
+    const query = communityQuery.trim().toLowerCase();
+    return community
+      .filter((plugin) =>
+        !query ||
+        `${plugin.name} ${plugin.id} ${plugin.author} ${plugin.description} ${plugin.repo}`.toLowerCase().includes(query),
+      )
+      .sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0) || a.name.localeCompare(b.name))
+      .slice(0, 24);
+  }, [community, communityQuery]);
 
   async function savePermissions(plugin: PluginInfo, grants: PermissionGrant[]) {
     await commands.updatePluginPermissions(plugin.id, grants);
@@ -45,6 +61,36 @@ export function PluginMarketplace() {
         ? `Imported ${imported.length} Obsidian plugin${imported.length === 1 ? "" : "s"}`
         : "No Obsidian plugin folders found",
     );
+  }
+
+  async function loadCommunityPlugins() {
+    setCommunityLoading(true);
+    setCommunityError(null);
+    try {
+      setCommunity(await commands.listObsidianCommunityPlugins());
+    } catch (error) {
+      setCommunityError(error instanceof Error ? error.message : "Could not load Obsidian community registry");
+    } finally {
+      setCommunityLoading(false);
+    }
+  }
+
+  async function installCommunityPlugin(plugin: ObsidianCommunityPlugin) {
+    setInstallingIds((current) => new Set([...current, plugin.id]));
+    setCommunityError(null);
+    try {
+      const installed = await commands.installObsidianCommunityPlugin(plugin.repo);
+      mergeInstalledPlugins([installed]);
+      setInstallNotice(`Installed ${installed.name}. Review permissions, then enable it.`);
+    } catch (error) {
+      setCommunityError(error instanceof Error ? error.message : `Could not install ${plugin.name}`);
+    } finally {
+      setInstallingIds((current) => {
+        const next = new Set(current);
+        next.delete(plugin.id);
+        return next;
+      });
+    }
   }
 
   function mergeInstalledPlugins(next: PluginInfo[]) {
@@ -92,6 +138,9 @@ export function PluginMarketplace() {
           <span className="chip chip-success mono">
             <Check size={11} /> OBSIDIAN MANIFESTS
           </span>
+          <Button onClick={() => void loadCommunityPlugins()} disabled={communityLoading}>
+            <RefreshCw size={13} /> Browse community
+          </Button>
           <Button onClick={() => void importObsidianPlugins()}>Import Obsidian vault</Button>
           <Button onClick={() => void installPlugin()}>Install from folder</Button>
         </div>
@@ -119,6 +168,49 @@ export function PluginMarketplace() {
         <Button variant="primary" onClick={() => void importObsidianPlugins()}>
           Import plugins
         </Button>
+      </section>
+
+      <section className="card mb-6 p-4">
+        <div className="mb-3 flex items-center gap-3">
+          <div>
+            <div className="pixel-label text-[10px]">Obsidian community registry</div>
+            <h2 className="mt-1 text-lg font-semibold">Download community plugins</h2>
+          </div>
+          <div className="relative ml-auto w-[min(420px,45vw)]">
+            <Search className="absolute left-2.5 top-2.5 text-[var(--text-4)]" size={14} />
+            <input
+              value={communityQuery}
+              onChange={(event) => setCommunityQuery(event.currentTarget.value)}
+              placeholder="Search Obsidian plugins"
+              className="w-full rounded-lg bg-[#0a0a10] py-2 pl-8 pr-3 text-xs text-[var(--text)] shadow-[inset_0_0_0_1px_rgba(139,124,255,0.12)] outline-none placeholder:text-[var(--text-4)] focus:shadow-[inset_0_0_0_1px_rgba(169,155,255,0.34)]"
+            />
+          </div>
+          <Button className="py-2 text-xs" onClick={() => void loadCommunityPlugins()} disabled={communityLoading}>
+            {communityLoading ? "Loading..." : community.length ? "Refresh" : "Load registry"}
+          </Button>
+        </div>
+        {communityError && (
+          <div className="mb-3 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs text-amber-100/85">
+            {communityError}
+          </div>
+        )}
+        {community.length === 0 && !communityLoading ? (
+          <div className="rounded-lg border border-dashed border-[var(--border)] px-3 py-5 text-center text-xs text-[var(--text-3)]">
+            Load the public Obsidian community registry to install plugins directly into this vault.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 xl:grid-cols-2 2xl:grid-cols-3">
+            {visibleCommunity.map((plugin) => (
+              <CommunityPluginRow
+                key={plugin.id}
+                plugin={plugin}
+                installed={installedIds.has(plugin.id)}
+                installing={installingIds.has(plugin.id)}
+                onInstall={() => void installCommunityPlugin(plugin)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="mb-5 flex items-center gap-2">
@@ -161,6 +253,38 @@ export function PluginMarketplace() {
           onSave={(grants) => void savePermissions(modalPlugin, grants)}
         />
       )}
+    </div>
+  );
+}
+
+function CommunityPluginRow({
+  plugin,
+  installed,
+  installing,
+  onInstall,
+}: {
+  plugin: ObsidianCommunityPlugin;
+  installed: boolean;
+  installing: boolean;
+  onInstall: () => void;
+}) {
+  return (
+    <div className="flex min-h-[104px] flex-col rounded-lg bg-white/[0.025] p-3 shadow-[inset_0_0_0_1px_rgba(139,124,255,0.08)]">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">{plugin.name}</div>
+          <div className="mono mt-0.5 truncate text-[10px] text-[var(--text-4)]">{plugin.id} / {plugin.author}</div>
+        </div>
+        {installed && <span className="chip chip-success mono text-[9px]">installed</span>}
+      </div>
+      <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--text-3)]">{plugin.description}</p>
+      <div className="mt-auto flex items-center gap-2 pt-2">
+        <span className="mono truncate text-[10px] text-[var(--text-4)]">{plugin.repo}</span>
+        {typeof plugin.downloads === "number" && <span className="chip mono text-[9px]">{formatCompact(plugin.downloads)} downloads</span>}
+        <Button className="ml-auto py-1.5 text-[11px]" variant={installed ? "ghost" : "primary"} onClick={onInstall} disabled={installing}>
+          {installing ? "Installing..." : installed ? "Update" : "Install"}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -233,6 +357,10 @@ function PluginCard({ plugin, onOpenPermissions, onToggleEnabled }: { plugin: Pl
       </div>
     </GlowCard>
   );
+}
+
+function formatCompact(value: number): string {
+  return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 function categoryFor(plugin: PluginInfo): string {

@@ -8,6 +8,8 @@ pub enum CoreError {
     Io(#[from] std::io::Error),
     #[error("Path escapes vault: {0}")]
     PathTraversal(String),
+    #[error("File already exists: {0}")]
+    AlreadyExists(String),
     #[error("No vault is open")]
     NoVault,
     #[error("Invalid vault path: {0}")]

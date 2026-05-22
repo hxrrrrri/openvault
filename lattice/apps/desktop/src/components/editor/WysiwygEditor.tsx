@@ -13,7 +13,7 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
-import { LatticeImage } from "@/components/editor/WysiwygExtensions";
+import { LatticeAudio, LatticeIframe, LatticeImage, LatticeTweet, LatticeVideo } from "@/components/editor/WysiwygExtensions";
 
 export interface WysiwygEditorProps {
   value: string;
@@ -59,6 +59,10 @@ export function WysiwygEditor({ value, onChange, placeholder, exposeEditor }: Wy
         orderedList: { keepMarks: true },
         underline: false,
       }),
+      LatticeIframe,
+      LatticeVideo,
+      LatticeAudio,
+      LatticeTweet,
       Underline,
       Highlight.configure({ multicolor: true }),
       Typography,

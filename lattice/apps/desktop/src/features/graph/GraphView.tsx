@@ -2,6 +2,7 @@ import { Eye, GitBranch, RotateCcw, Tag } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { GraphCanvas } from "@/components/graph/GraphCanvas";
+import { commands } from "@/lib/commands";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGraphStore } from "@/stores/graph-store";
 import { useUIStore } from "@/stores/ui-store";
@@ -24,18 +25,53 @@ export function GraphView() {
   const setGraphSettings = useSettingsStore((state) => state.setGraph);
   const setActivePath = useVaultStore((state) => state.setActivePath);
   const activeNote = useVaultStore((state) => state.activeNote);
+  const refreshFiles = useVaultStore((state) => state.refreshFiles);
   const setView = useUIStore((state) => state.setView);
+  const activeNotePath = activeNote?.path ?? null;
+  const activeNoteTitle = activeNote?.title ?? "";
   const selected = graph.nodes.find((node) => node.id === selectedNodeId) ?? null;
   const tags = useMemo(() => Array.from(new Set(graph.nodes.flatMap((node) => node.tags))).sort(), [graph.nodes]);
   const [sidebarWidth, setSidebarWidth] = useState(256);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (graphMode === "local" && activeNote) {
-      void loadLocalGraph(activeNote.path);
-    } else {
-      void loadGraph();
+    if (graphMode === "local" && activeNotePath) {
+      void loadLocalGraph(activeNotePath).then(() => setGraphError(null));
+      return;
     }
-  }, [activeNote?.path, filters, graphMode, loadGraph, loadLocalGraph]);
+    if (graphMode === "local" && !activeNotePath) {
+      setGraphMode("global");
+    }
+    void loadGraph().then(() => setGraphError(null));
+  }, [activeNotePath, filters, graphMode, loadGraph, loadLocalGraph, setGraphMode]);
+
+  async function reloadGraph(options: { reindex?: boolean; mode?: "global" | "local" } = {}) {
+    const mode = options.mode ?? graphMode;
+    try {
+      if (options.reindex) {
+        await commands.scanVault();
+        await refreshFiles();
+      }
+      if (mode === "local" && activeNotePath) {
+        await loadLocalGraph(activeNotePath);
+      } else {
+        await loadGraph();
+      }
+      setGraphError(null);
+    } catch (error) {
+      setGraphError(error instanceof Error ? error.message : "Could not refresh graph");
+    }
+  }
+
+  async function refreshGraph() {
+    setIsRefreshing(true);
+    try {
+      await reloadGraph({ reindex: true });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[radial-gradient(ellipse_at_center,#0a0a14_0%,#050507_80%)]">
@@ -139,18 +175,23 @@ export function GraphView() {
         />
         <div className="pointer-events-none absolute right-4 top-4 text-right">
           <div className="pixel-label text-[10px]">Vault constellation</div>
-          <div className="mt-1 text-base font-semibold">Global graph - {graph.nodes.length} nodes</div>
+          <div className="mt-1 text-base font-semibold">
+            {graphMode === "local" && activeNotePath ? `Local graph - ${activeNoteTitle}` : "Global graph"} - {graph.nodes.length} nodes
+          </div>
         </div>
+        {graphError && (
+          <div className="absolute right-4 top-16 max-w-md rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs text-amber-100/85">
+            {graphError}
+          </div>
+        )}
         <div className="absolute left-4 top-4 flex gap-2">
           <Button
             variant="ghost"
             className="bg-black/20 text-xs"
-            onClick={() => {
-              if (graphMode === "local" && activeNote) void loadLocalGraph(activeNote.path);
-              else void loadGraph();
-            }}
+            onClick={() => void refreshGraph()}
+            disabled={isRefreshing}
           >
-            <RotateCcw size={13} /> Refresh
+            <RotateCcw size={13} /> {isRefreshing ? "Refreshing..." : "Refresh"}
           </Button>
           <Button
             variant={labelMode !== "auto" ? "primary" : "ghost"}
@@ -166,14 +207,16 @@ export function GraphView() {
           <Button
             variant={graphMode === "local" ? "primary" : "ghost"}
             className="bg-black/20 text-xs"
+            disabled={!activeNotePath && graphMode !== "local"}
+            title={!activeNotePath && graphMode !== "local" ? "Open a note to use local graph" : undefined}
             onClick={() => {
               const next = graphMode === "local" ? "global" : "local";
+              if (next === "local" && !activeNotePath) return;
               setGraphMode(next);
-              if (next === "local" && activeNote) void loadLocalGraph(activeNote.path);
-              else void loadGraph();
+              void reloadGraph({ mode: next });
             }}
           >
-            <GitBranch size={13} /> {graphMode === "local" ? "Global graph" : "Local graph"}
+            <GitBranch size={13} /> {graphMode === "local" ? "Local graph" : "Global graph"}
           </Button>
         </div>
       </div>

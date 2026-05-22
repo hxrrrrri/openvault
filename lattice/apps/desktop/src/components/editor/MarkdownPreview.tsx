@@ -122,6 +122,26 @@ function MarkdownChunk({
         img: ({ src, alt }) => (
           <PreviewImage src={src} alt={alt ?? ""} notePath={notePath} />
         ),
+        iframe: ({ src, title, width, height, allow }) => (
+          <PreviewIframe
+            src={src}
+            title={title}
+            width={width}
+            height={height}
+            allow={allow}
+          />
+        ),
+        video: ({ src, poster }) => <PreviewVideo src={src} poster={poster} />,
+        audio: ({ src }) => <PreviewAudio src={src} />,
+        blockquote: ({ className, children }) =>
+          className?.includes("twitter-tweet") ? (
+            <div className="my-4 rounded-lg border border-[#2f2a55] bg-[#11111a] px-4 py-3 text-sm shadow-[0_18px_46px_rgba(0,0,0,0.24)]">
+              <div className="pixel-label mb-2 text-[10px]">Tweet</div>
+              <div className="text-[var(--violet-2)]">{children}</div>
+            </div>
+          ) : (
+            <blockquote className={className}>{children}</blockquote>
+          ),
         mark: ({ children }) => (
           <mark className="rounded bg-amber-300/25 px-1 text-amber-100">
             {children}
@@ -138,6 +158,85 @@ function MarkdownChunk({
       {preprocess(content)}
     </ReactMarkdown>
   );
+}
+
+function PreviewIframe({
+  src,
+  title,
+  width,
+  height,
+  allow,
+}: {
+  src?: string;
+  title?: string;
+  width?: string | number;
+  height?: string | number;
+  allow?: string;
+}) {
+  if (!src) {
+    return (
+      <div className="my-4 rounded-lg border border-dashed border-amber-300/25 bg-amber-400/5 px-3 py-4 text-xs text-amber-100/85">
+        Missing iframe source.
+      </div>
+    );
+  }
+  return (
+    <div className="my-4 overflow-hidden rounded-xl border border-[#2c2940] bg-[#09090e] shadow-[0_18px_46px_rgba(0,0,0,0.28)]">
+      <div className="flex items-center gap-2 border-b border-[#28243c] bg-[#15151e] px-3 py-2">
+        <span className="pixel-label text-[10px]">{embedLabel(src)}</span>
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className="mono ml-auto max-w-[70%] truncate text-[10px] text-[var(--text-4)] no-underline hover:text-white"
+        >
+          {src.replace(/^https?:\/\//, "")}
+        </a>
+      </div>
+      <iframe
+        src={src}
+        title={title || embedLabel(src)}
+        allow={allow}
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+        className="block border-0 bg-black"
+        style={{
+          width: cssSize(width, "100%"),
+          height: cssSize(height, "420px"),
+          maxWidth: "100%",
+        }}
+      />
+    </div>
+  );
+}
+
+function PreviewVideo({ src, poster }: { src?: string; poster?: string }) {
+  if (!src) {
+    return (
+      <div className="my-4 rounded-lg border border-dashed border-amber-300/25 bg-amber-400/5 px-3 py-4 text-xs text-amber-100/85">
+        Missing video source.
+      </div>
+    );
+  }
+  return (
+    <video
+      src={src}
+      poster={poster}
+      controls
+      className="my-4 max-h-[520px] w-full rounded-xl border border-[#2c2940] bg-black shadow-[0_18px_46px_rgba(0,0,0,0.28)]"
+    />
+  );
+}
+
+function PreviewAudio({ src }: { src?: string }) {
+  if (!src) {
+    return (
+      <div className="my-4 rounded-lg border border-dashed border-amber-300/25 bg-amber-400/5 px-3 py-4 text-xs text-amber-100/85">
+        Missing audio source.
+      </div>
+    );
+  }
+  return <audio src={src} controls className="my-4 w-full" />;
 }
 
 function MermaidDiagram({ chart }: { chart: string }) {
@@ -722,4 +821,16 @@ function hashString(value: string) {
     hash = (Math.imul(31, hash) + value.charCodeAt(index)) | 0;
   }
   return Math.abs(hash).toString(36);
+}
+
+function cssSize(value: string | number | undefined, fallback: string) {
+  if (typeof value === "number") return `${value}px`;
+  if (!value) return fallback;
+  return /^\d+(\.\d+)?$/.test(value) ? `${value}px` : value;
+}
+
+function embedLabel(src: string) {
+  if (/youtube\.com\/embed|youtu\.be|youtube\.com/i.test(src)) return "YouTube";
+  if (/vimeo\.com/i.test(src)) return "Vimeo";
+  return "Iframe";
 }

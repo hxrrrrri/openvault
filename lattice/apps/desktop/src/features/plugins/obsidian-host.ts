@@ -2,7 +2,8 @@ import { commands } from "@/lib/commands";
 import type { FileNode, PluginInfo, PluginRuntimeBundle } from "@/types/domain";
 import { registerPluginStyles } from "@/features/plugins/obsidian-styles";
 import { clearPluginCommandsForPlugin, registerPluginCommand } from "@/features/plugins/plugin-command-registry";
-import type { ObsidianCommandRegistration, ObsidianHostEvent, ObsidianRuntimeContext } from "@/features/plugins/obsidian-runtime";
+import type { ObsidianCommandRegistration, ObsidianHostEvent, ObsidianRuntimeContext, SerializedObsidianElement } from "@/features/plugins/obsidian-runtime";
+import { usePluginUIStore } from "@/stores/plugin-ui-store";
 
 interface WorkerPending {
   resolve: (value: unknown) => void;
@@ -74,6 +75,7 @@ export class ObsidianPluginHost {
     }
     for (const cleanup of [...session.cleanup].reverse()) cleanup();
     clearPluginCommandsForPlugin(pluginId);
+    usePluginUIStore.getState().clearPluginContributions(pluginId);
     session.worker.terminate();
     this.sessions.delete(pluginId);
   }
@@ -82,6 +84,10 @@ export class ObsidianPluginHost {
     const session = this.sessions.get(pluginId);
     if (!session) throw new Error(`Obsidian plugin is not running: ${pluginId}`);
     await this.request(session, { type: "invokeCommand", commandId });
+  }
+
+  async invokeRibbonAction(pluginId: string, ribbonId: string): Promise<void> {
+    await this.invokeCommand(pluginId, ribbonId);
   }
 
   private request(session: PluginSession, message: Record<string, unknown>): Promise<unknown> {
@@ -132,7 +138,48 @@ export class ObsidianPluginHost {
       console.warn(`Obsidian plugin ${pluginId}: ${event.type}`, event.payload);
     }
     if (event.type === "notice") {
-      console.info(`Obsidian plugin ${pluginId}:`, event.payload);
+      const payload = asRecord(event.payload);
+      usePluginUIStore.getState().pushNotice({
+        pluginId,
+        message: String(payload.message ?? ""),
+        timeout: Number(payload.timeout ?? 4000),
+      });
+    }
+    if (event.type === "ribbon.registered") {
+      const payload = asRecord(event.payload);
+      usePluginUIStore.getState().registerRibbonItem({
+        id: String(payload.id),
+        pluginId,
+        icon: String(payload.icon ?? "puzzle"),
+        title: String(payload.title ?? "Plugin action"),
+      });
+    }
+    if (event.type === "ribbon.removed") {
+      usePluginUIStore.getState().removeRibbonItem(String(asRecord(event.payload).id));
+    }
+    if (event.type === "status-bar.registered" || event.type === "status-bar.updated") {
+      const payload = asRecord(event.payload);
+      usePluginUIStore.getState().upsertStatusItem({
+        id: String(payload.id),
+        pluginId,
+        text: String(payload.text ?? ""),
+        element: asSerializedElement(payload.element),
+      });
+    }
+    if (event.type === "status-bar.removed") {
+      usePluginUIStore.getState().removeStatusItem(String(asRecord(event.payload).id));
+    }
+    if (event.type === "setting-tab.registered" || event.type === "setting-tab.updated") {
+      const payload = asRecord(event.payload);
+      usePluginUIStore.getState().upsertSettingTab({
+        id: String(payload.id),
+        pluginId,
+        name: String(payload.name ?? "Plugin settings"),
+        element: asSerializedElement(payload.element),
+      });
+    }
+    if (event.type === "setting-tab.removed") {
+      usePluginUIStore.getState().removeSettingTab(String(asRecord(event.payload).id));
     }
   }
 
@@ -165,7 +212,14 @@ export class ObsidianPluginHost {
 }
 
 export function createObsidianPluginHost(): ObsidianPluginHost {
-  return new ObsidianPluginHost();
+  return getObsidianPluginHost();
+}
+
+let sharedHost: ObsidianPluginHost | null = null;
+
+export function getObsidianPluginHost(): ObsidianPluginHost {
+  sharedHost ??= new ObsidianPluginHost();
+  return sharedHost;
 }
 
 async function runHostAction(action: string, payload: unknown): Promise<unknown> {
@@ -222,4 +276,9 @@ function firstMarkdownPath(files: FileNode[]): string | null {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function asSerializedElement(value: unknown): SerializedObsidianElement | undefined {
+  if (!value || typeof value !== "object" || !("tagName" in value)) return undefined;
+  return value as SerializedObsidianElement;
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GraphCanvas } from "@/components/graph/GraphCanvas";
 import type { GraphPayload } from "@/types/domain";
@@ -96,5 +96,31 @@ describe("GraphCanvas", () => {
     fireEvent.click(canvas!, { clientX: 450, clientY: 325 });
 
     expect(onSelect).toHaveBeenCalledWith("A.md");
+  });
+
+  it("zooms smoothly past the old close-up limit", async () => {
+    const { container, getByText } = render(
+      <div style={{ width: 800, height: 600 }}>
+        <GraphCanvas
+          graph={graph}
+          selectedId={null}
+          hoveredId={null}
+          filters={{ includeOrphans: true }}
+          labelMode="auto"
+          onSelect={vi.fn()}
+          onHover={vi.fn()}
+          onOpenNode={vi.fn()}
+        />
+      </div>,
+    );
+
+    const canvas = container.querySelector("canvas");
+    expect(canvas).toBeTruthy();
+
+    for (let index = 0; index < 25; index += 1) {
+      fireEvent.wheel(canvas!, { clientX: 450, clientY: 325, deltaMode: 0, deltaY: -100 });
+    }
+
+    await waitFor(() => expect(getByText("2400%")).toBeTruthy());
   });
 });

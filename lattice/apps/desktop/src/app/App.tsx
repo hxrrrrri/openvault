@@ -6,6 +6,8 @@ import { RightSidebar } from "@/components/layout/RightSidebar";
 import { SidebarRail } from "@/components/layout/SidebarRail";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { MobilePreview } from "@/components/mobile/MobilePreview";
+import { PluginNotices } from "@/components/plugins/PluginNotices";
+import { PluginRibbon } from "@/components/plugins/PluginRibbon";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { OnboardingScreen } from "@/features/onboarding/OnboardingScreen";
 import { Routes } from "@/app/routes";
@@ -73,12 +75,18 @@ export function App() {
         ) : (
           <>
             {leftOpen ? (
-              <LeftSidebar
-                width={leftWidth}
-                onResize={(delta) => setLeftWidth((width) => clamp(width + delta, 220, 420))}
-              />
+              <>
+                {appearance.showRibbon && <PluginRibbon />}
+                <LeftSidebar
+                  width={leftWidth}
+                  onResize={(delta) => setLeftWidth((width) => clamp(width + delta, 220, 420))}
+                />
+              </>
             ) : (
-              <SidebarRail side="left" onClick={() => setLeftOpen(true)} />
+              <>
+                {appearance.showRibbon && <PluginRibbon />}
+                <SidebarRail side="left" onClick={() => setLeftOpen(true)} />
+              </>
             )}
 
             <main className="relative z-20 flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -100,6 +108,7 @@ export function App() {
 
       {!mobilePreview && <StatusBar />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+      <PluginNotices />
       <PagePreview />
     </div>
   );

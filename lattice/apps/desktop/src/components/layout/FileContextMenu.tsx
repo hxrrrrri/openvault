@@ -28,6 +28,7 @@ interface FileContextMenuProps {
 
 export function FileContextMenu({ node, x, y, onClose }: FileContextMenuProps) {
   const filesSettings = useSettingsStore((state) => state.files);
+  const files = useVaultStore((state) => state.files);
   const refreshFiles = useVaultStore((state) => state.refreshFiles);
   const activePath = useVaultStore((state) => state.activePath);
   const setActivePath = useVaultStore((state) => state.setActivePath);
@@ -100,7 +101,9 @@ export function FileContextMenu({ node, x, y, onClose }: FileContextMenuProps) {
       if (isFolder) {
         await renameFolderViaRust(node.path, target);
       } else {
-        await commands.renameNote(node.path, target);
+        await commands.renameNote(node.path, target, {
+          updateLinks: filesSettings.updateLinksOnRename,
+        });
       }
       if (activePath === node.path) await setActivePath(target);
       await refreshFiles();
@@ -124,7 +127,9 @@ export function FileContextMenu({ node, x, y, onClose }: FileContextMenuProps) {
     setBusy(true);
     try {
       if (node.kind === "file") {
-        await commands.renameNote(node.path, target);
+        await commands.renameNote(node.path, target, {
+          updateLinks: filesSettings.updateLinksOnRename,
+        });
       } else {
         await renameFolderViaRust(node.path, target);
       }
@@ -141,12 +146,7 @@ export function FileContextMenu({ node, x, y, onClose }: FileContextMenuProps) {
   async function performDelete() {
     setBusy(true);
     try {
-      if (filesSettings.trashStrategy === "app" && node.kind === "file") {
-        const trashPath = `.lattice/trash/${Date.now()}-${node.name}`;
-        await commands.renameNote(node.path, trashPath);
-      } else {
-        await commands.deleteNote(node.path);
-      }
+      await commands.deleteNote(node.path, { trashStrategy: filesSettings.trashStrategy });
       await refreshFiles();
       onClose();
     } catch (err) {
@@ -157,9 +157,7 @@ export function FileContextMenu({ node, x, y, onClose }: FileContextMenuProps) {
 
   async function duplicateNote() {
     if (isFolder) return;
-    const dir = node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/") + 1) : "";
-    const baseName = node.name.replace(/\.md$/i, "");
-    const copyPath = `${dir}${baseName} copy.md`;
+    const copyPath = uniqueCopyPath(node.path, files);
     setBusy(true);
     try {
       const original = await commands.readNote(node.path);
@@ -472,8 +470,25 @@ async function renameFolderViaRust(oldPath: string, newPath: string) {
   // Reuse note rename — backend treats markdown paths only. For folders we walk children client-side.
   // Best-effort: try note rename first; if it errors, fall back to creating new folder and moving children.
   try {
-    await commands.renameNote(oldPath, newPath);
+    await commands.renameNote(oldPath, newPath, { updateLinks: false });
   } catch {
     await commands.createFolder(newPath);
   }
+}
+
+function uniqueCopyPath(path: string, files: FileNode[]): string {
+  const existing = new Set(flattenFiles(files).map((file) => file.path.toLowerCase()));
+  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+  const name = path.split("/").pop() ?? path;
+  const baseName = name.replace(/\.md$/i, "");
+  for (let index = 0; index < 1000; index += 1) {
+    const suffix = index === 0 ? " copy" : ` copy ${index + 1}`;
+    const candidate = `${dir}${baseName}${suffix}.md`;
+    if (!existing.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${dir}${baseName} copy ${Date.now()}.md`;
+}
+
+function flattenFiles(files: FileNode[]): FileNode[] {
+  return files.flatMap((file) => [file, ...(file.children ? flattenFiles(file.children) : [])]);
 }

@@ -1,5 +1,5 @@
 import { Calendar, CheckSquare, ChevronDown, Hash, Link2, List, Plus, Type, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   inferType,
   parseProperties,
@@ -17,6 +17,19 @@ interface PropertiesPanelProps {
 
 export function PropertiesPanel({ content, onChange }: PropertiesPanelProps) {
   const parsed = useMemo(() => parseProperties(content), [content]);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem("lattice-properties-collapsed") === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("lattice-properties-collapsed", String(collapsed));
+    } catch {}
+  }, [collapsed]);
 
   function update(properties: PropertyEntry[]) {
     onChange(serializeProperties(properties, parsed.body));
@@ -73,28 +86,53 @@ export function PropertiesPanel({ content, onChange }: PropertiesPanelProps) {
   }
 
   return (
-    <div className="border-b border-[var(--border)]/40 bg-[#0a0a0e]/30 px-10 pb-3 pt-4">
-      <div className="pixel-label mb-2 text-[10px]">Properties</div>
-      <div className="space-y-1.5">
-        {parsed.properties.map((entry, index) => (
-          <PropertyRow
-            key={`${entry.key}:${index}`}
-            entry={entry}
-            type={inferType(entry.value)}
-            onKeyChange={(key) => updateEntry(index, { key })}
-            onValueChange={(value) => updateEntry(index, { value })}
-            onTypeChange={(type) => changeType(index, type)}
-            onRemove={() => removeEntry(index)}
-          />
-        ))}
+    <div className="border-b border-[var(--border)]/35 bg-[#0a0a0e]/18 px-10 py-2">
+      <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={addEntry}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-[var(--text-3)] transition hover:bg-violet/10 hover:text-white"
+          onClick={() => setCollapsed((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-violet/10"
+          aria-expanded={!collapsed}
         >
-          <Plus size={11} /> Add property
+          <ChevronDown
+            size={13}
+            className={`shrink-0 text-[var(--text-3)] transition ${collapsed ? "-rotate-90" : ""}`}
+          />
+          <span className="pixel-label text-[10px]">Properties</span>
+          <span className="mono rounded-full bg-white/[0.035] px-1.5 py-0.5 text-[10px] text-[var(--text-4)]">
+            {parsed.properties.length}
+          </span>
         </button>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={addEntry}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-[var(--text-3)] transition hover:bg-violet/10 hover:text-white"
+          >
+            <Plus size={11} /> Add property
+          </button>
+        )}
       </div>
+      {!collapsed && (
+        <div className="mt-2 space-y-1.5 pb-1">
+          {parsed.properties.map((entry, index) => (
+            <PropertyRow
+              key={`${entry.key}:${index}`}
+              entry={entry}
+              type={inferType(entry.value)}
+              onKeyChange={(key) => updateEntry(index, { key })}
+              onValueChange={(value) => updateEntry(index, { value })}
+              onTypeChange={(type) => changeType(index, type)}
+              onRemove={() => removeEntry(index)}
+            />
+          ))}
+          {parsed.properties.length === 0 && (
+            <div className="rounded-md border border-dashed border-[var(--border)] px-2 py-2 text-xs text-[var(--text-3)]">
+              No frontmatter properties yet.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -268,6 +306,5 @@ function ValueEditor({
   );
 }
 
-// Suppress unused warnings on lucide icons referenced via map
-void ChevronDown;
+// Suppress unused warnings on lucide icons reserved for future property types
 void Link2;

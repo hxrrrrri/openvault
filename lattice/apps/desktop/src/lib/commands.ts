@@ -40,6 +40,18 @@ export interface ImportedAsset {
   mime: string;
 }
 
+export interface ObsidianCommunityPlugin {
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  repo: string;
+  downloads?: number;
+  updatedAt?: number;
+}
+
+export type TrashStrategy = "system" | "app" | "permanent";
+
 export const coreCommands: CommandItem[] = [
   {
     id: "note.new",
@@ -199,11 +211,18 @@ export const commands = {
   createNote(path: string, content = `# ${titleFromMarkdown(path, "")}\n`) {
     return safeInvoke<FileNode>("create_note", { path, content });
   },
-  renameNote(oldPath: string, newPath: string) {
-    return safeInvoke<FileNode>("rename_note", { oldPath, newPath });
+  renameNote(oldPath: string, newPath: string, options: { updateLinks?: boolean } = {}) {
+    return safeInvoke<FileNode>("rename_note", {
+      oldPath,
+      newPath,
+      updateLinks: options.updateLinks,
+    });
   },
-  deleteNote(path: string) {
-    return safeInvoke<boolean>("delete_note", { path });
+  deleteNote(path: string, options: { trashStrategy?: TrashStrategy } = {}) {
+    return safeInvoke<boolean>("delete_note", {
+      path,
+      trashStrategy: options.trashStrategy,
+    });
   },
   createFolder(path: string) {
     return safeInvoke<FileNode>("create_folder", { path });
@@ -269,6 +288,9 @@ export const commands = {
   listPlugins() {
     return safeInvoke<PluginInfo[]>("list_plugins");
   },
+  listObsidianCommunityPlugins() {
+    return safeInvoke<ObsidianCommunityPlugin[]>("list_obsidian_community_plugins");
+  },
   installPluginFromFolder(path: string) {
     return safeInvoke<PluginInfo>("install_plugin_from_folder", { path });
   },
@@ -276,6 +298,16 @@ export const commands = {
     return safeInvoke<PluginInfo[]>("install_obsidian_plugins_from_vault", {
       path,
     });
+  },
+  installObsidianCommunityPlugin(repo: string) {
+    return safeInvoke<PluginInfo>("install_obsidian_community_plugin", { repo });
+  },
+  installObsidianPluginFromSources(request: {
+    manifestJson: string;
+    mainSource: string;
+    stylesSource?: string | null;
+  }) {
+    return safeInvoke<PluginInfo>("install_obsidian_plugin_from_sources", request);
   },
   enablePlugin(id: string) {
     return safeInvoke<boolean>("enable_plugin", { id });

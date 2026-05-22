@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { findCommandForCombo, normalizeCombo } from "@/features/hotkeys/hotkey-registry";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useVaultStore } from "@/stores/vault-store";
@@ -37,56 +38,100 @@ export function useGlobalShortcuts() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      const mod = event.metaKey || event.ctrlKey;
-      if (mod && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        togglePalette();
-      }
-      if (mod && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        void saveActiveNote();
-      }
-      if (mod && event.key.toLowerCase() === "n") {
-        event.preventDefault();
-        void createNote(newNotePath());
-        setView("workspace");
-      }
-      if (mod && event.shiftKey && event.key.toLowerCase() === "d") {
-        event.preventDefault();
-        void createNote(`Daily Notes/${today()}.md`);
-        setView("workspace");
-      }
-      if (mod && event.shiftKey && event.key.toLowerCase() === "c") {
-        event.preventDefault();
-        setView("canvas");
-      }
-      if (mod && event.shiftKey && event.key.toLowerCase() === "t") {
-        event.preventDefault();
-        const path = useWorkspaceStore.getState().reopenLastClosed();
-        if (path) void useVaultStore.getState().setActivePath(path);
-      }
-      if (mod && event.key.toLowerCase() === "w") {
-        const active = useWorkspaceStore.getState().activeTabId;
-        if (active) {
-          event.preventDefault();
-          useWorkspaceStore.getState().closeTab(active);
-          const next = useWorkspaceStore.getState().activeTabId;
-          const nextPath = useWorkspaceStore.getState().tabs.find((t) => t.id === next)?.path ?? null;
-          if (nextPath) void useVaultStore.getState().setActivePath(nextPath);
-        }
-      }
-      if (mod && event.key.toLowerCase() === "g") {
-        event.preventDefault();
-        setView("graph");
-      }
       if (event.key === "Escape") {
         setPaletteOpen(false);
+        return;
+      }
+
+      const commandId = findCommandForCombo(normalizeCombo(event));
+      if (!commandId) return;
+      if (commandId === "find.in-editor" || commandId === "find.replace") return;
+      if (isEditableTarget(event.target) && !["palette.open", "note.save"].includes(commandId)) {
+        return;
+      }
+
+      const handled = runHotkeyCommand(commandId, {
+        createNote,
+        saveActiveNote,
+        setView,
+        togglePalette,
+      });
+      if (handled) {
+        event.preventDefault();
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [createNote, saveActiveNote, setPaletteOpen, setView, togglePalette]);
+}
+
+interface ShortcutContext {
+  createNote: ReturnType<typeof useVaultStore.getState>["createNote"];
+  saveActiveNote: ReturnType<typeof useVaultStore.getState>["saveActiveNote"];
+  setView: ReturnType<typeof useUIStore.getState>["setView"];
+  togglePalette: ReturnType<typeof useUIStore.getState>["togglePalette"];
+}
+
+function runHotkeyCommand(commandId: string, context: ShortcutContext): boolean {
+  switch (commandId) {
+    case "palette.open":
+      context.togglePalette();
+      return true;
+    case "note.save":
+      void context.saveActiveNote();
+      return true;
+    case "note.new":
+      void context.createNote(newNotePath());
+      context.setView("workspace");
+      return true;
+    case "note.daily":
+      void context.createNote(`Daily Notes/${today()}.md`);
+      context.setView("workspace");
+      return true;
+    case "graph.open":
+      context.setView("graph");
+      return true;
+    case "canvas.open":
+      context.setView("canvas");
+      return true;
+    case "settings.open":
+      context.setView("settings");
+      return true;
+    case "tab.reopen-closed": {
+      const path = useWorkspaceStore.getState().reopenLastClosed();
+      if (path) void useVaultStore.getState().setActivePath(path);
+      return true;
+    }
+    case "tab.close-active":
+      return closeActiveTab();
+    case "editor.toggle-mode":
+      toggleEditorMode();
+      return true;
+    default:
+      return false;
+  }
+}
+
+function closeActiveTab(): boolean {
+  const workspace = useWorkspaceStore.getState();
+  const active = workspace.activeTabId;
+  if (!active) return false;
+  workspace.closeTab(active);
+  const next = useWorkspaceStore.getState().activeTabId;
+  const nextPath = useWorkspaceStore.getState().tabs.find((tab) => tab.id === next)?.path ?? null;
+  if (nextPath) void useVaultStore.getState().setActivePath(nextPath);
+  return true;
+}
+
+function toggleEditorMode() {
+  const workspace = useWorkspaceStore.getState();
+  workspace.setEditorMode(workspace.editorMode === "edit" ? "preview" : "edit");
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("input, textarea, select, [contenteditable], [role='textbox']"));
 }
 
 function today() {

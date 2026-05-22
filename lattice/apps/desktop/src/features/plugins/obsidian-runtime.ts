@@ -19,12 +19,25 @@ export interface ObsidianCommandRegistration {
   pluginId: string;
 }
 
+export interface SerializedObsidianElement {
+  tagName: string;
+  textContent: string;
+  classes: string[];
+  attributes: Record<string, string>;
+  children: SerializedObsidianElement[];
+}
+
 export interface ObsidianHostEvent {
   type:
     | "command.registered"
     | "ribbon.registered"
+    | "ribbon.removed"
     | "status-bar.registered"
+    | "status-bar.updated"
+    | "status-bar.removed"
     | "setting-tab.registered"
+    | "setting-tab.updated"
+    | "setting-tab.removed"
     | "notice"
     | "markdown-processor.registered"
     | "permission.denied"
@@ -53,7 +66,7 @@ interface FileStat {
 }
 
 type CommandCallback = () => void | Promise<void>;
-type Disposable = (() => void) | { unload?: () => void; detach?: () => void };
+type Disposable = (() => void) | { unload?: () => void; detach?: () => void; off?: () => void };
 
 export class ObsidianPermissionError extends Error {
   constructor(
@@ -129,6 +142,10 @@ class RuntimeState {
   readonly readCache = new Map<string, string>();
   plugin?: ObsidianPluginInstance;
   activePath: string | null;
+  private nextRibbonId = 1;
+  private nextStatusBarId = 1;
+  private nextSettingTabId = 1;
+  private nextElementActionId = 1;
 
   constructor(
     private readonly bundle: ObsidianRuntimeBundle,
@@ -193,6 +210,64 @@ class RuntimeState {
     if (command.callback) this.commandCallbacks.set(id, command.callback);
     this.emit("command.registered", registration);
     this.register(() => this.commandCallbacks.delete(id));
+  }
+
+  registerRibbonAction(icon: string, title: string, callback: CommandCallback): string {
+    const id = `${this.pluginId}:ribbon:${this.nextRibbonId++}`;
+    this.commandCallbacks.set(id, callback);
+    this.emit("ribbon.registered", { id, icon, title });
+    this.register(() => {
+      this.commandCallbacks.delete(id);
+      this.emit("ribbon.removed", { id });
+    });
+    return id;
+  }
+
+  registerElementAction(callback: CommandCallback): string {
+    const id = `${this.pluginId}:action:${this.nextElementActionId++}`;
+    this.commandCallbacks.set(id, callback);
+    this.register(() => this.commandCallbacks.delete(id));
+    return id;
+  }
+
+  registerStatusBarElement(): ShimElement {
+    const id = `${this.pluginId}:status:${this.nextStatusBarId++}`;
+    const element = new ShimElement("span");
+    element.setChangeHandler((updated) => {
+      this.emit("status-bar.updated", {
+        id,
+        text: updated.textContent,
+        element: updated.toJSON(),
+      });
+    });
+    this.emit("status-bar.registered", { id, element: element.toJSON() });
+    this.register(() => {
+      element.remove();
+      this.emit("status-bar.removed", { id });
+    });
+    return element;
+  }
+
+  registerSettingTab(tab: PluginSettingTab): void {
+    const id = `${this.pluginId}:settings:${this.nextSettingTabId++}`;
+    const name = tab.name || tab.constructor.name || this.manifest.name;
+    tab.containerEl.setChangeHandler((element) => {
+      this.emit("setting-tab.updated", {
+        id,
+        name,
+        element: element.toJSON(),
+      });
+    });
+    tab.display();
+    this.emit("setting-tab.registered", {
+      id,
+      name,
+      element: tab.containerEl.toJSON(),
+    });
+    this.register(() => {
+      tab.hide();
+      this.emit("setting-tab.removed", { id });
+    });
   }
 
   async invokeCommand(id: string): Promise<void> {
@@ -310,12 +385,76 @@ class Notice {
   hide(): void {}
 }
 
-class Modal {
+class Component {
+  private readonly children: Component[] = [];
+  private readonly cleanups: Disposable[] = [];
+  private loaded = false;
+
+  async load(): Promise<void> {
+    if (this.loaded) return;
+    this.loaded = true;
+    await this.onload();
+    for (const child of this.children) await child.load();
+  }
+
+  async unload(): Promise<void> {
+    for (const child of [...this.children].reverse()) await child.unload();
+    for (const cleanup of [...this.cleanups].reverse()) dispose(cleanup);
+    this.cleanups.length = 0;
+    this.children.length = 0;
+    if (this.loaded) await this.onunload();
+    this.loaded = false;
+  }
+
+  async onload(): Promise<void> {}
+
+  async onunload(): Promise<void> {}
+
+  addChild<T extends Component>(component: T): T {
+    this.children.push(component);
+    if (this.loaded) void component.load();
+    return component;
+  }
+
+  removeChild<T extends Component>(component: T): T {
+    const index = this.children.indexOf(component);
+    if (index >= 0) this.children.splice(index, 1);
+    void component.unload();
+    return component;
+  }
+
+  register(disposable: Disposable): void {
+    this.cleanups.push(disposable);
+    currentRuntime()?.register(disposable);
+  }
+
+  registerEvent(disposable: Disposable): void {
+    this.register(disposable);
+  }
+
+  registerDomEvent(
+    element: { addEventListener?: (...args: unknown[]) => void; removeEventListener?: (...args: unknown[]) => void },
+    type: string,
+    callback: EventListener,
+    options?: AddEventListenerOptions,
+  ): void {
+    element.addEventListener?.(type, callback, options);
+    this.register(() => element.removeEventListener?.(type, callback, options));
+  }
+
+  registerInterval(intervalId: number): void {
+    this.register(() => clearInterval(intervalId));
+  }
+}
+
+class Modal extends Component {
   titleEl = new ShimElement("h2");
   contentEl = new ShimElement("div");
   modalEl = new ShimElement("div");
 
-  constructor(public app: ObsidianApp) {}
+  constructor(public app: ObsidianApp) {
+    super();
+  }
 
   open(): void {
     currentRuntime()?.requirePermission("ui:modal", "Modal.open");
@@ -332,22 +471,82 @@ class Modal {
   onClose(): void {}
 }
 
-class PluginSettingTab {
+class PluginSettingTab extends Component {
   containerEl = new ShimElement("div");
+  name = "";
 
-  constructor(public app: ObsidianApp, public plugin: ObsidianPluginInstance) {}
+  constructor(public app: ObsidianApp, public plugin: ObsidianPluginInstance) {
+    super();
+  }
 
   display(): void {}
 
   hide(): void {}
 }
 
-class Setting {
+class Menu {
+  items: unknown[] = [];
+
+  addItem(callback: (item: MenuItem) => void): this {
+    const item = new MenuItem();
+    callback(item);
+    this.items.push(item);
+    return this;
+  }
+
+  addSeparator(): this {
+    this.items.push({ separator: true });
+    return this;
+  }
+
+  showAtMouseEvent(_event: unknown): this {
+    currentRuntime()?.emit("notice", { message: "Plugin menu opened" });
+    return this;
+  }
+
+  showAtPosition(_position: { x: number; y: number }): this {
+    currentRuntime()?.emit("notice", { message: "Plugin menu opened" });
+    return this;
+  }
+
+  hide(): void {}
+}
+
+class MenuItem {
+  title = "";
+  icon = "";
+  callback: (() => void | Promise<void>) | null = null;
+
+  setTitle(title: string): this {
+    this.title = title;
+    return this;
+  }
+
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
+  onClick(callback: () => void | Promise<void>): this {
+    this.callback = callback;
+    return this;
+  }
+}
+
+class Setting extends Component {
   controlEl = new ShimElement("div");
   settingEl = new ShimElement("div");
   infoEl = new ShimElement("div");
 
-  constructor(public containerEl: ShimElement) {}
+  constructor(public containerEl: ShimElement) {
+    super();
+    this.settingEl.addClass("setting-item");
+    this.infoEl.addClass("setting-item-info");
+    this.controlEl.addClass("setting-item-control");
+    this.settingEl.appendChild(this.infoEl);
+    this.settingEl.appendChild(this.controlEl);
+    this.containerEl.appendChild(this.settingEl);
+  }
 
   setName(value: string): this {
     this.infoEl.setText(value);
@@ -356,32 +555,43 @@ class Setting {
 
   setDesc(value: string): this {
     this.settingEl.setAttribute("data-desc", value);
+    this.infoEl.createDiv({ text: value, cls: "setting-item-description" });
     return this;
   }
 
   addText(callback: (component: SettingTextComponent) => void): this {
-    callback(new SettingTextComponent());
+    callback(new SettingTextComponent(this.controlEl));
     return this;
   }
 
   addToggle(callback: (component: SettingToggleComponent) => void): this {
-    callback(new SettingToggleComponent());
+    callback(new SettingToggleComponent(this.controlEl));
     return this;
   }
 
   addButton(callback: (component: SettingButtonComponent) => void): this {
-    callback(new SettingButtonComponent());
+    callback(new SettingButtonComponent(this.controlEl));
     return this;
   }
 }
 
 class SettingTextComponent {
   private value = "";
-  setPlaceholder(_value: string): this {
+  private readonly inputEl: ShimElement;
+
+  constructor(containerEl?: ShimElement) {
+    this.inputEl = new ShimElement("input");
+    this.inputEl.setAttr("type", "text");
+    containerEl?.appendChild(this.inputEl);
+  }
+
+  setPlaceholder(value: string): this {
+    this.inputEl.setAttr("placeholder", value);
     return this;
   }
   setValue(value: string): this {
     this.value = value;
+    this.inputEl.setAttr("value", value);
     return this;
   }
   getValue(): string {
@@ -394,8 +604,19 @@ class SettingTextComponent {
 
 class SettingToggleComponent {
   private value = false;
+  private readonly toggleEl: ShimElement;
+
+  constructor(containerEl?: ShimElement) {
+    this.toggleEl = new ShimElement("button");
+    this.toggleEl.addClass("toggle");
+    this.toggleEl.setAttr("type", "button");
+    containerEl?.appendChild(this.toggleEl);
+  }
+
   setValue(value: boolean): this {
     this.value = value;
+    this.toggleEl.setAttr("aria-pressed", String(value));
+    this.toggleEl.toggleClass("on", value);
     return this;
   }
   getValue(): boolean {
@@ -407,13 +628,30 @@ class SettingToggleComponent {
 }
 
 class SettingButtonComponent {
-  setButtonText(_value: string): this {
+  private readonly buttonEl: ShimElement;
+
+  constructor(containerEl?: ShimElement) {
+    this.buttonEl = new ShimElement("button");
+    this.buttonEl.addClass("plugin-setting-button");
+    this.buttonEl.setAttr("type", "button");
+    containerEl?.appendChild(this.buttonEl);
+  }
+
+  setButtonText(value: string): this {
+    this.buttonEl.setText(value);
     return this;
   }
   setCta(): this {
+    this.buttonEl.addClass("mod-cta");
     return this;
   }
-  onClick(_callback: () => void | Promise<void>): this {
+  onClick(callback: () => void | Promise<void>): this {
+    const runtime = currentRuntime();
+    if (runtime) {
+      const actionId = runtime.registerElementAction(callback);
+      this.buttonEl.setAttr("data-lattice-action-id", actionId);
+      this.buttonEl.setAttr("data-lattice-plugin-id", runtime.pluginId);
+    }
     return this;
   }
 }
@@ -423,47 +661,163 @@ class ShimElement {
   children: ShimElement[] = [];
   private classes = new Set<string>();
   private attributes = new Map<string, string>();
+  private onChange: ((element: ShimElement) => void) | null = null;
+  private parent: ShimElement | null = null;
 
   constructor(public tagName: string) {}
 
+  setChangeHandler(onChange: ((element: ShimElement) => void) | null): this {
+    this.onChange = onChange;
+    return this;
+  }
+
   setText(value: string): this {
     this.textContent = value;
+    this.notifyChange();
     return this;
   }
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
+    this.notifyChange();
   }
 
   addClass(name: string): this {
     this.classes.add(name);
+    this.notifyChange();
+    return this;
+  }
+
+  addClasses(names: string[]): this {
+    for (const name of names) this.addClass(name);
     return this;
   }
 
   removeClass(name: string): this {
     this.classes.delete(name);
+    this.notifyChange();
     return this;
+  }
+
+  removeClasses(names: string[]): this {
+    for (const name of names) this.removeClass(name);
+    return this;
+  }
+
+  toggleClass(name: string, value?: boolean): this {
+    const next = value ?? !this.classes.has(name);
+    if (next) this.addClass(name);
+    else this.removeClass(name);
+    return this;
+  }
+
+  hasClass(name: string): boolean {
+    return this.classes.has(name);
+  }
+
+  setAttr(name: string, value: string): this {
+    this.setAttribute(name, value);
+    return this;
+  }
+
+  setAttrs(attrs: Record<string, string>): this {
+    for (const [key, value] of Object.entries(attrs)) this.setAttr(key, value);
+    return this;
+  }
+
+  getAttr(name: string): string | null {
+    return this.attributes.get(name) ?? null;
   }
 
   empty(): void {
     this.children = [];
     this.textContent = "";
+    this.notifyChange();
   }
 
-  createEl(tagName: string, options?: { text?: string; cls?: string }): ShimElement {
+  createEl(tagName: string, options?: { text?: string; cls?: string | string[]; attr?: Record<string, string> }): ShimElement {
     const child = new ShimElement(tagName);
+    child.parent = this;
     if (options?.text) child.setText(options.text);
-    if (options?.cls) child.addClass(options.cls);
+    if (Array.isArray(options?.cls)) child.addClasses(options.cls);
+    else if (options?.cls) child.addClass(options.cls);
+    if (options?.attr) child.setAttrs(options.attr);
     this.children.push(child);
+    this.notifyChange();
     return child;
+  }
+
+  createDiv(options?: { text?: string; cls?: string | string[]; attr?: Record<string, string> }): ShimElement {
+    return this.createEl("div", options);
+  }
+
+  createSpan(options?: { text?: string; cls?: string | string[]; attr?: Record<string, string> }): ShimElement {
+    return this.createEl("span", options);
+  }
+
+  appendText(text: string): this {
+    this.textContent += text;
+    this.notifyChange();
+    return this;
   }
 
   appendChild(child: ShimElement): ShimElement {
+    child.parent = this;
     this.children.push(child);
+    this.notifyChange();
     return child;
   }
 
-  remove(): void {}
+  on(_type: string, _selectorOrCallback: unknown, _callback?: unknown): () => void {
+    return () => {};
+  }
+
+  off(): void {}
+
+  onClickEvent(callback: () => void): this {
+    void callback;
+    return this;
+  }
+
+  show(): this {
+    this.attributes.set("style.display", "");
+    this.notifyChange();
+    return this;
+  }
+
+  hide(): this {
+    this.attributes.set("style.display", "none");
+    this.notifyChange();
+    return this;
+  }
+
+  detach(): void {
+    this.remove();
+  }
+
+  remove(): void {
+    this.children = [];
+    this.textContent = "";
+    this.notifyChange();
+  }
+
+  toJSON(): SerializedObsidianElement {
+    return {
+      tagName: this.tagName,
+      textContent: this.textContent,
+      classes: Array.from(this.classes),
+      attributes: Object.fromEntries(this.attributes),
+      children: this.children.map((child) => child.toJSON()),
+    };
+  }
+
+  private notifyChange(): void {
+    if (this.parent) {
+      this.parent.notifyChange();
+      return;
+    }
+    this.onChange?.(this);
+  }
 }
 
 interface ObsidianApp {
@@ -489,7 +843,7 @@ function currentRuntime(): RuntimeState | null {
 function createObsidianModule(runtime: RuntimeState): Record<string, unknown> {
   activeRuntime = runtime;
 
-  class Plugin {
+  class Plugin extends Component {
     app = runtime.app;
     manifest = runtime.manifest;
 
@@ -499,39 +853,56 @@ function createObsidianModule(runtime: RuntimeState): Record<string, unknown> {
 
     addRibbonIcon(icon: string, title: string, callback: () => void | Promise<void>): ShimElement {
       runtime.requirePermission("ui:ribbon", "Plugin.addRibbonIcon");
-      runtime.emit("ribbon.registered", { icon, title });
       const element = new ShimElement("button");
+      const id = runtime.registerRibbonAction(icon, title, callback);
       element.setAttribute("aria-label", title);
-      element.setAttribute("data-callback", String(runtime.commands.length));
+      element.setAttribute("data-lattice-ribbon-id", id);
       runtime.register(() => element.remove());
-      void callback;
       return element;
     }
 
     addStatusBarItem(): ShimElement {
       runtime.requirePermission("ui:status-bar", "Plugin.addStatusBarItem");
-      const element = new ShimElement("span");
-      runtime.emit("status-bar.registered", { id: `${runtime.pluginId}:status-bar` });
-      runtime.register(() => element.remove());
-      return element;
+      return runtime.registerStatusBarElement();
     }
 
     addSettingTab(tab: PluginSettingTab): void {
       runtime.requirePermission("ui:settings-tab", "Plugin.addSettingTab");
-      runtime.emit("setting-tab.registered", { name: tab.constructor.name });
-      runtime.register(() => tab.hide());
+      runtime.registerSettingTab(tab);
     }
 
-    register(disposable: Disposable): void {
-      runtime.register(disposable);
+    registerView(type: string, viewCreator: unknown): void {
+      runtime.requirePermission("workspace:views", "Plugin.registerView");
+      runtime.emit("api.unsupported", { apiName: "Plugin.registerView", type, supportedAs: "registered placeholder" });
+      runtime.register(() => void viewCreator);
     }
 
-    registerEvent(disposable: Disposable): void {
-      runtime.register(disposable);
+    registerExtensions(extensions: string[]): void {
+      runtime.emit("api.unsupported", { apiName: "Plugin.registerExtensions", extensions });
     }
 
-    registerInterval(intervalId: number): void {
-      runtime.register(() => clearInterval(intervalId));
+    registerEditorExtension(extension: unknown): void {
+      runtime.requirePermission("editor:write", "Plugin.registerEditorExtension");
+      runtime.emit("api.unsupported", { apiName: "Plugin.registerEditorExtension", supportedAs: "load-safe placeholder" });
+      runtime.register(() => void extension);
+    }
+
+    registerEditorSuggest(suggester: unknown): void {
+      runtime.requirePermission("editor:write", "Plugin.registerEditorSuggest");
+      runtime.emit("api.unsupported", { apiName: "Plugin.registerEditorSuggest", supportedAs: "load-safe placeholder" });
+      runtime.register(() => void suggester);
+    }
+
+    registerHoverLinkSource(id: string, source: unknown): void {
+      runtime.requirePermission("workspace:views", "Plugin.registerHoverLinkSource");
+      runtime.emit("api.unsupported", { apiName: "Plugin.registerHoverLinkSource", id, supportedAs: "load-safe placeholder" });
+      runtime.register(() => void source);
+    }
+
+    registerObsidianProtocolHandler(action: string, handler: unknown): void {
+      runtime.requirePermission("workspace:layout", "Plugin.registerObsidianProtocolHandler");
+      runtime.emit("api.unsupported", { apiName: "Plugin.registerObsidianProtocolHandler", action, supportedAs: "load-safe placeholder" });
+      runtime.register(() => void handler);
     }
 
     registerMarkdownPostProcessor(processor: unknown): void {
@@ -564,16 +935,26 @@ function createObsidianModule(runtime: RuntimeState): Record<string, unknown> {
 
   return {
     App: class App {},
+    Component,
     Plugin,
     Notice,
     Modal,
+    Menu,
     PluginSettingTab,
     Setting,
     TAbstractFile,
     TFile,
     TFolder,
-    MarkdownView: class MarkdownView {},
+    WorkspaceLeaf: class WorkspaceLeaf {},
+    View: Component,
+    ItemView: class ItemView extends Component {},
+    FileView: class FileView extends Component {},
+    MarkdownView: class MarkdownView extends Component {},
+    MarkdownRenderer: {
+      render: async (_app: unknown, _markdown: string, _el: ShimElement, _sourcePath: string, _component: Component) => {},
+    },
     normalizePath,
+    debounce,
     requestUrl: async (request: unknown) => {
       runtime.requirePermission("network:http", "requestUrl");
       return runtime.call("network.requestUrl", request);
@@ -788,7 +1169,27 @@ function dispose(disposable: Disposable): void {
     disposable.unload();
     return;
   }
+  if (typeof disposable.off === "function") {
+    disposable.off();
+    return;
+  }
   disposable.detach?.();
+}
+
+function debounce<T extends (...args: unknown[]) => unknown>(fn: T, timeout = 0): T & { cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const wrapped = ((...args: Parameters<T>) => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      fn(...args);
+    }, timeout);
+  }) as T & { cancel: () => void };
+  wrapped.cancel = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+  return wrapped;
 }
 
 function asObject(value: unknown): Record<string, unknown> {

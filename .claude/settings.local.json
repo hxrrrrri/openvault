@@ -9,7 +9,27 @@
       "Skill(firecrawl-search)",
       "Skill(firecrawl-search:*)",
       "WebFetch(domain:forum.obsidian.md)",
-      "WebFetch(domain:obsidian.md)"
+      "WebFetch(domain:obsidian.md)",
+      "Bash(ls \"C:/Users/haris/AppData/Local/Programs/Obsidian\")",
+      "Read(//c/Users/haris/AppData/Local/Programs/Obsidian/**)",
+      "Read(//c/Users/haris/AppData/Local/Temp/obsidian_re/obsidian/**)",
+      "Bash(node -e \"const c=require\\('fs'\\).readFileSync\\('C:/Users/haris/AppData/Local/Temp/obsidian_re/obsidian/app.js','utf8'\\); const m=[...new Set\\(\\(c.match\\(/wss:\\\\/\\\\/[^'\\\\\"\\\\\\\\\\\\\\\\\\)]+/g\\)||[]\\)\\)]; console.log\\('count',m.length\\); console.log\\(m.slice\\(0,40\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/extract.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/extract2.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/extract3.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/extract4.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/extract5.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/mine.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/mine2.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/mine3.js\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/mine4.js\")",
+      "Bash(node -e \"const d=require\\('C:/Users/haris/AppData/Local/Temp/obsidian_re/i18n_dump.json'\\); console.log\\('=== commands ==='\\); d.commands.forEach\\(s=>console.log\\(' ',s\\)\\); console.log\\('=== formulas ==='\\); d.formulas.forEach\\(s=>console.log\\(' ',s\\)\\); console.log\\('=== funcs ==='\\); d.funcs.forEach\\(s=>console.log\\(' ',s\\)\\);\")",
+      "Bash(node -e \"const d=require\\('C:/Users/haris/AppData/Local/Temp/obsidian_re/i18n_dump.json'\\); ['bases','canvas','graphView','appearance','sync','publish','dailyNotes','search','quickSwitcher','backlinks','outline','templates','workspaces','fileRecovery','noteComposer','audioRecorder','wordCount','randomNote','tagPane','properties','pagePreview','bookmarks','customCss','commandPalette','slides','outgoingLinks','footnotesPane','openWithDefaultApp','translucency','slashCommand','editorStatus','uniqueNoteCreator','markdownFormatImporter','webViewer','pdf','callout','type','nouns'].forEach\\(k=>{ console.log\\('===',k,'==='\\); \\(d[k]||[]\\).forEach\\(s=>console.log\\(' ',s\\)\\); }\\);\")",
+      "Bash(node -e \"const d=require\\('C:/Users/haris/AppData/Local/Temp/obsidian_re/i18n_dump.json'\\); ['dailyNotes','search','quickSwitcher','fileExplorer','properties','hotkeys','fileRecovery','templates','workspaces','customCss','pdf','webViewer','callout','type','nouns','bookmarks','mobileToolbar','audioRecorder','noteComposer','wordCount','randomNote','outline','tagPane','footnotesPane','pagePreview','openWithDefaultApp','translucency','slashCommand','editorStatus','uniqueNoteCreator','markdownFormatImporter','outgoingLinks','backlinks'].forEach\\(k=>{ console.log\\('===',k,'==='\\); \\(d[k]||[]\\).forEach\\(s=>console.log\\(' ',s\\)\\); }\\);\")",
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/mine5.js\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\haris\\AppData\\Local\\Temp\\obsidian_re"
     ]
   }
 }

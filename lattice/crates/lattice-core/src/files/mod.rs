@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-use crate::errors::CoreResult;
+use crate::errors::{CoreError, CoreResult};
 use crate::vault::Vault;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,6 +103,9 @@ pub fn write_note(vault: &Vault, path: &str, content: &str) -> CoreResult<SaveRe
 
 pub fn create_note(vault: &Vault, path: &str, content: &str) -> CoreResult<FileNode> {
     let absolute = vault.resolve_user_path(path)?;
+    if absolute.exists() {
+        return Err(CoreError::AlreadyExists(path.to_string()));
+    }
     if let Some(parent) = absolute.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -113,6 +116,9 @@ pub fn create_note(vault: &Vault, path: &str, content: &str) -> CoreResult<FileN
 pub fn rename_note(vault: &Vault, old_path: &str, new_path: &str) -> CoreResult<FileNode> {
     let old_absolute = vault.resolve_user_path(old_path)?;
     let new_absolute = vault.resolve_user_path(new_path)?;
+    if new_absolute.exists() && old_absolute != new_absolute {
+        return Err(CoreError::AlreadyExists(new_path.to_string()));
+    }
     if let Some(parent) = new_absolute.parent() {
         fs::create_dir_all(parent)?;
     }

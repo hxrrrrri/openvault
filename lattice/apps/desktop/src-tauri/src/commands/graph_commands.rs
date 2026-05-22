@@ -1,5 +1,6 @@
 use lattice_graph::{
-    build_graph, Backlink, GraphFilters, GraphPayload, OutgoingLink, UnresolvedLink,
+    build_graph, build_local_graph, Backlink, GraphFilters, GraphPayload, OutgoingLink,
+    UnresolvedLink,
 };
 use tauri::State;
 
@@ -23,7 +24,7 @@ pub async fn get_global_graph(
 #[tauri::command]
 pub async fn get_local_graph(
     path: String,
-    _depth: u8,
+    depth: u8,
     state: State<'_, AppState>,
 ) -> Result<GraphPayload, String> {
     state.with_workspace(|workspace| {
@@ -32,7 +33,7 @@ pub async fn get_local_graph(
             .list_notes()
             .map_err(|error| error.to_string())?;
         let links = workspace.db.links().map_err(|error| error.to_string())?;
-        Ok(build_graph(&notes, &links, Some(&path)))
+        Ok(build_local_graph(&notes, &links, &path, depth))
     })
 }
 

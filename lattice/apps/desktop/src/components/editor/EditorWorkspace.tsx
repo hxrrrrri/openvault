@@ -3,6 +3,7 @@ import { Columns2, Eye, FileCode2, FilePenLine, Focus, GitBranch, Palette, Plus,
 import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/Button";
+import { DrawingPad } from "@/components/editor/DrawingPad";
 import { EmojiPicker } from "@/components/editor/EmojiPicker";
 import { InsertMenu } from "@/components/editor/InsertMenu";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
@@ -50,6 +51,7 @@ export function EditorWorkspace() {
   const setView = useUIStore((state) => state.setView);
   const [colorOpen, setColorOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [drawOpen, setDrawOpen] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [insertPosition, setInsertPosition] = useState<PanelPosition | null>(null);
   const [emojiPosition, setEmojiPosition] = useState<PanelPosition | null>(null);
@@ -76,9 +78,10 @@ export function EditorWorkspace() {
 
   function insertMarkdownAtEnd(text: string) {
     if (!activeNote) return;
-    const cleaned = text.trimEnd();
-    const separator = activeNote.content.endsWith("\n") || !activeNote.content ? "" : "\n";
-    updateActiveContent(`${activeNote.content}${separator}${cleaned}\n`);
+    const cleaned = text.trim();
+    if (!cleaned) return;
+    const separator = blockSeparator(activeNote.content);
+    updateActiveContent(`${activeNote.content}${separator}${cleaned}\n\n`);
   }
 
   async function importLocalFiles(fileList: FileList) {
@@ -96,6 +99,19 @@ export function EditorWorkspace() {
     }
     insertMarkdownAtEnd(`\n${snippets.join("\n")}\n`);
     setEditorNotice(`${snippets.length} attachment${snippets.length === 1 ? "" : "s"} inserted`);
+    window.setTimeout(() => setEditorNotice(null), 1800);
+    await refreshFiles();
+  }
+
+  async function insertDrawing(bytesBase64: string) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const asset = await commands.importAsset({
+      fileName: `Drawing ${stamp}.png`,
+      bytesBase64,
+      attachmentFolder: filesSettings.attachmentFolder,
+    });
+    insertMarkdownAtEnd(`\n${formatImportedAsset(asset)}\n`);
+    setEditorNotice("Drawing inserted");
     window.setTimeout(() => setEditorNotice(null), 1800);
     await refreshFiles();
   }
@@ -232,6 +248,7 @@ export function EditorWorkspace() {
                         window.setTimeout(() => setEditorNotice(null), 2600);
                       })
                     }
+                    onOpenDraw={() => setDrawOpen(true)}
                     onClose={() => setInsertOpen(false)}
                   />
                 </div>
@@ -455,6 +472,19 @@ export function EditorWorkspace() {
         )}
       </div>
 
+      {drawOpen && createPortal(
+        <DrawingPad
+          onClose={() => setDrawOpen(false)}
+          onInsert={(bytesBase64) =>
+            insertDrawing(bytesBase64).catch((error) => {
+              setEditorNotice(error instanceof Error ? error.message : "Could not insert drawing");
+              window.setTimeout(() => setEditorNotice(null), 2600);
+            })
+          }
+        />,
+        document.body,
+      )}
+
       <div className="pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-3 rounded-full bg-[#111116]/85 px-4 py-1.5 text-[11px] text-[var(--text-3)] shadow-[inset_0_0_0_1px_rgba(139,124,255,0.08),0_12px_30px_-22px_rgba(0,0,0,0.9)] backdrop-blur-md">
         <span className="mono">{stats.words} words</span>
         <span className="mono">{stats.lines} lines</span>
@@ -495,7 +525,9 @@ async function renameActiveNote(oldPath: string, newTitle: string): Promise<stri
   const newPath = `${dir}${cleanTitle}${ext}`;
   if (newPath === oldPath) return null;
   try {
-    const file = await commands.renameNote(oldPath, newPath);
+    const file = await commands.renameNote(oldPath, newPath, {
+      updateLinks: useSettingsStore.getState().files.updateLinksOnRename,
+    });
     return file.path;
   } catch (error) {
     console.warn("Inline rename failed", error);
@@ -582,6 +614,13 @@ function applyPreset(
   }
   if (presetId === "default") return;
   update(`---\nbgPreset: ${presetId}\n---\n${current}`);
+}
+
+function blockSeparator(content: string) {
+  if (!content) return "";
+  if (content.endsWith("\n\n")) return "";
+  if (content.endsWith("\n")) return "\n";
+  return "\n\n";
 }
 
 function readFileAsBase64(file: File): Promise<string> {

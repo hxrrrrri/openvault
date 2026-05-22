@@ -9,6 +9,7 @@ import {
   Minus,
   Music,
   Paperclip,
+  Paintbrush,
   Quote,
   Search,
   Smile,
@@ -23,6 +24,7 @@ import { EmojiPicker } from "@/components/editor/EmojiPicker";
 interface InsertMenuProps {
   onInsert: (text: string) => void;
   onPickLocalFiles?: (files: FileList) => void;
+  onOpenDraw?: () => void;
   onClose: () => void;
   maxHeight?: number;
   width?: number;
@@ -99,7 +101,7 @@ const RICH_SNIPPETS = {
   query: "```lattice-query\nfrom notes\nwhere type = \"project\"\nsort modifiedAt desc\ncolumns title, status, tags, modifiedAt\nlimit 20\n```\n",
 };
 
-export function InsertMenu({ onInsert, onPickLocalFiles, onClose, maxHeight = 520, width = 390 }: InsertMenuProps) {
+export function InsertMenu({ onInsert, onPickLocalFiles, onOpenDraw, onClose, maxHeight = 520, width = 390 }: InsertMenuProps) {
   const [mode, setMode] = useState<Mode>("root");
   const [query, setQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -179,6 +181,19 @@ export function InsertMenu({ onInsert, onPickLocalFiles, onClose, maxHeight = 52
           hint: "flowchart block",
           onClick: () => insert(RICH_SNIPPETS.mermaid),
         },
+        ...(onOpenDraw
+          ? [
+              {
+                icon: <Paintbrush size={14} />,
+                label: "Draw",
+                hint: "sketch, shapes, notes",
+                onClick: () => {
+                  onClose();
+                  onOpenDraw();
+                },
+              },
+            ]
+          : []),
         {
           icon: <Table2 size={14} />,
           label: "Database query",
@@ -190,10 +205,10 @@ export function InsertMenu({ onInsert, onPickLocalFiles, onClose, maxHeight = 52
     {
       title: "Write",
       items: [
-        { icon: <Hash size={14} />, label: "Heading 1", hint: "# Section title", onClick: () => insert("# ") },
-        { icon: <Hash size={14} />, label: "Heading 2", hint: "## Subsection", onClick: () => insert("## ") },
-        { icon: <ListChecks size={14} />, label: "Task list", hint: "- [ ] actionable item", onClick: () => insert("- [ ] ") },
-        { icon: <Quote size={14} />, label: "Quote / callout", hint: "> [!note]", onClick: () => insert("> [!note] Note\n> ") },
+        { icon: <Hash size={14} />, label: "Heading 1", hint: "# Section title", onClick: () => insert("# Section title\n") },
+        { icon: <Hash size={14} />, label: "Heading 2", hint: "## Subsection", onClick: () => insert("## Subsection\n") },
+        { icon: <ListChecks size={14} />, label: "Task list", hint: "working checkbox", onClick: () => insert("- [ ] New task\n") },
+        { icon: <Quote size={14} />, label: "Quote / callout", hint: "> [!note]", onClick: () => insert("> [!note] Note\n> Add context here.\n") },
         { icon: <Code2 size={14} />, label: "Code block", hint: "fenced block", onClick: () => insert("```\n\n```\n") },
         { icon: <Table2 size={14} />, label: "Table", hint: "2 columns", onClick: () => insert("| Column | Column |\n| --- | --- |\n| Cell | Cell |\n") },
         { icon: <Minus size={14} />, label: "Divider", hint: "horizontal rule", onClick: () => insert("\n---\n") },

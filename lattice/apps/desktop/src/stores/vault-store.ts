@@ -123,9 +123,19 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     await get().refreshFiles();
   },
   async createNote(path, content) {
-    const file = await commands.createNote(path, content);
-    await get().refreshFiles();
-    await get().setActivePath(file.path);
+    try {
+      const file = await commands.createNote(path, content);
+      await get().refreshFiles();
+      await get().setActivePath(file.path);
+    } catch (error) {
+      if (isAlreadyExistsError(error)) {
+        await get().refreshFiles();
+        await get().setActivePath(path);
+        return;
+      }
+      set({ error: error instanceof Error ? error.message : `Could not create ${path}` });
+      throw error;
+    }
   },
   async createFolder(path) {
     await commands.createFolder(path);
@@ -204,4 +214,9 @@ function flattenFiles(files: FileNode[]): FileNode[] {
 
 function normalizeComparable(value: string): string {
   return value.replace(/\\/g, "/").replace(/\.md$/i, "").toLowerCase();
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("file already exists");
 }

@@ -9,6 +9,21 @@ Use this guide when an AI CLI is launched from the LATTICE terminal to inspect, 
 - Prefer project-local commands from `lattice/package.json` and `lattice/Cargo.toml`.
 - Read existing source before editing. Preserve unrelated user changes.
 
+## Vault Storage Rules
+
+**When creating or storing Markdown notes, design documents, or knowledge content:**
+
+- **Do NOT create notes in the project repository** (e.g., `designs/`, `notes/` folders at the repo root).
+- **Always store notes in the LATTICE_VAULT_ROOT** — the active vault folder (typically `Documents/Lattice Vault` on Windows).
+- Use appropriate vault subdirectories:
+  - `Designs/` — UI/UX design notes and documentation
+  - `Notes/` — General research and documentation
+  - `Inbox/` — Quick captures and inbox items
+  - `Projects/` — Project-specific knowledge
+  - `Books/` — Book notes and reading lists
+- The LATTICE_VAULT_ROOT environment variable will be set when launching from LATTICE. Use it: `${LATTICE_VAULT_ROOT}/Designs/`, `${LATTICE_VAULT_ROOT}/Notes/`, etc.
+- If `LATTICE_VAULT_ROOT` is not set, default to `Documents/Lattice Vault` on the user's home directory.
+
 ## Permission Gates
 
 Ask the user for explicit approval before:

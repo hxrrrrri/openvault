@@ -8,7 +8,8 @@ use lattice_core::{Vault, VaultInfo};
 use lattice_db::LatticeDb;
 use lattice_indexer::parse_markdown;
 use lattice_plugin_runtime::{
-    read_runtime_bundle, PermissionGrant, PluginInfo, PluginManifest, PluginRuntimeBundle,
+    inspect_plugin_folder, read_runtime_bundle, PermissionGrant, PluginInfo, PluginManifest,
+    PluginRuntimeBundle,
 };
 use serde::Serialize;
 
@@ -146,9 +147,13 @@ impl AppState {
             .plugins
             .lock()
             .map_err(|_| "plugin lock poisoned".to_string())?;
-        guard.retain(|existing| existing.id != plugin.id);
-        guard.push(plugin.clone());
-        Ok(plugin)
+        let mut next = plugin;
+        if let Some(existing) = guard.iter().find(|existing| existing.id == next.id) {
+            preserve_plugin_state(&mut next, existing);
+        }
+        guard.retain(|existing| existing.id != next.id);
+        guard.push(next.clone());
+        Ok(next)
     }
 
     pub fn set_plugin_enabled(&self, id: String, enabled: bool) -> Result<bool, String> {
@@ -253,6 +258,7 @@ impl AppState {
 
     fn open_workspace(&self, vault: Vault) -> Result<VaultInfo, String> {
         let db = LatticeDb::open(vault.index_db_path()).map_err(|error| error.to_string())?;
+        let mut discovered_plugins = discover_obsidian_plugins(&vault.root);
         {
             let mut guard = self
                 .workspace
@@ -260,8 +266,43 @@ impl AppState {
                 .map_err(|_| "workspace lock poisoned".to_string())?;
             *guard = Some(AppWorkspace { vault, db });
         }
+        if let Ok(mut plugins) = self.plugins.lock() {
+            for plugin in &mut discovered_plugins {
+                if let Some(existing) = plugins.iter().find(|existing| existing.id == plugin.id) {
+                    preserve_plugin_state(plugin, existing);
+                }
+            }
+            *plugins = discovered_plugins;
+        }
         let _ = self.reindex();
         self.info()
+    }
+}
+
+fn discover_obsidian_plugins(root: &Path) -> Vec<PluginInfo> {
+    let plugins_dir = root.join(".obsidian").join("plugins");
+    let Ok(entries) = fs::read_dir(plugins_dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && path.join("manifest.json").is_file())
+        .filter_map(|path| inspect_plugin_folder(path).ok().map(|folder| folder.plugin))
+        .collect()
+}
+
+fn preserve_plugin_state(next: &mut PluginInfo, existing: &PluginInfo) {
+    next.enabled = existing.enabled;
+    for grant in &mut next.granted_permissions {
+        if let Some(previous) = existing
+            .granted_permissions
+            .iter()
+            .find(|previous| previous.permission == grant.permission)
+        {
+            grant.granted = previous.granted;
+            grant.last_used_at = previous.last_used_at.clone();
+        }
     }
 }
 

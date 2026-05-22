@@ -6,6 +6,7 @@ import {
   Keyboard,
   Lock,
   Palette,
+  Puzzle,
   RotateCcw,
   Search,
   Settings,
@@ -16,12 +17,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { GlowCard } from "@/components/ui/GlowCard";
 import { PluginMarketplace } from "@/components/plugins/PluginMarketplace";
+import { PluginSettingsContributions } from "@/components/plugins/PluginSettingsContributions";
 import { HotkeyEditor } from "@/features/hotkeys/HotkeyEditor";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { EditorMode } from "@/types/domain";
 
-type SettingsTab = "general" | "appearance" | "editor" | "files" | "graph" | "sync" | "permissions" | "ai" | "search" | "keyboard" | "about";
+type SettingsTab = "general" | "appearance" | "editor" | "files" | "graph" | "sync" | "permissions" | "plugin-tabs" | "ai" | "search" | "keyboard" | "about";
 
 const tabs = [
   { id: "general" as const, label: "General", icon: <Settings size={13} /> },
@@ -31,6 +33,7 @@ const tabs = [
   { id: "graph" as const, label: "Graph", icon: <Database size={13} /> },
   { id: "sync" as const, label: "Encrypted Sync", icon: <Lock size={13} /> },
   { id: "permissions" as const, label: "Plugin Permissions", icon: <Shield size={13} /> },
+  { id: "plugin-tabs" as const, label: "Plugin Tabs", icon: <Puzzle size={13} /> },
   { id: "ai" as const, label: "AI Local Model", icon: <BrainCircuit size={13} /> },
   { id: "search" as const, label: "Index Search", icon: <Search size={13} /> },
   { id: "keyboard" as const, label: "Keyboard", icon: <Keyboard size={13} /> },
@@ -71,6 +74,7 @@ export function SettingsScreen() {
         {tab === "graph" && <GraphSettings />}
         {tab === "sync" && <SyncSettings />}
         {tab === "permissions" && <PermissionsSettings />}
+        {tab === "plugin-tabs" && <PluginTabsSettings />}
         {tab === "ai" && <AISettings />}
         {tab === "search" && <SearchSettings />}
         {tab === "keyboard" && <KeyboardSettings />}
@@ -349,6 +353,14 @@ function PermissionsSettings() {
         <PluginMarketplace />
       </div>
     </div>
+  );
+}
+
+function PluginTabsSettings() {
+  return (
+    <SettingsSection eyebrow="Plugin Tabs" title="Runtime plugin settings">
+      <PluginSettingsContributions />
+    </SettingsSection>
   );
 }
 

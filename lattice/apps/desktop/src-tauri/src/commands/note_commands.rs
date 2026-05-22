@@ -84,6 +84,7 @@ pub async fn create_note(
 pub async fn rename_note(
     old_path: String,
     new_path: String,
+    update_links: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<FileNode, String> {
     state.with_workspace_mut(|workspace| {
@@ -100,22 +101,58 @@ pub async fn rename_note(
             .db
             .upsert_note(&new_path, &note.content, note.content.len() as u64, &meta)
             .map_err(|error| error.to_string())?;
-        rewrite_wikilinks_after_rename(workspace, &old_path, &new_path)?;
+        if update_links.unwrap_or(true) {
+            rewrite_wikilinks_after_rename(workspace, &old_path, &new_path)?;
+        }
         Ok(node)
     })
 }
 
 #[tauri::command]
-pub async fn delete_note(path: String, state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn delete_note(
+    path: String,
+    trash_strategy: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
     state.with_workspace_mut(|workspace| {
-        let result =
-            files::delete_note(&workspace.vault, &path).map_err(|error| error.to_string())?;
+        let result = match trash_strategy.as_deref().unwrap_or("permanent") {
+            "app" | "system" => {
+                move_note_to_app_trash(workspace, &path)?;
+                true
+            }
+            "permanent" => {
+                files::delete_note(&workspace.vault, &path).map_err(|error| error.to_string())?
+            }
+            other => return Err(format!("unknown trash strategy: {other}")),
+        };
         workspace
             .db
             .delete_note(&path)
             .map_err(|error| error.to_string())?;
         Ok(result)
     })
+}
+
+fn move_note_to_app_trash(
+    workspace: &mut crate::state::AppWorkspace,
+    path: &str,
+) -> Result<(), String> {
+    let absolute = workspace
+        .vault
+        .resolve_user_path(path)
+        .map_err(|error| error.to_string())?;
+    if !absolute.exists() {
+        return Ok(());
+    }
+    if !absolute.is_file() {
+        return Err("Only files can be moved to trash right now".to_string());
+    }
+
+    let safe_name = sanitize_file_name(path);
+    let target_name = format!("{}-{safe_name}", chrono::Utc::now().timestamp_millis());
+    let target_path = unique_asset_path(&workspace.vault.root, ".lattice/trash", &target_name);
+    files::rename_note(&workspace.vault, path, &target_path).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

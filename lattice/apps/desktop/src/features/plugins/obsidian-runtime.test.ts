@@ -8,11 +8,14 @@ const allPermissions = [
   "workspace:read",
   "workspace:layout",
   "workspace:views",
+  "editor:read",
+  "editor:write",
   "editor:commands",
   "ui:modal",
   "ui:ribbon",
   "ui:status-bar",
   "ui:settings-tab",
+  "ui:theme",
   "storage:plugin-data",
 ];
 
@@ -77,6 +80,51 @@ describe("Obsidian runtime shim", () => {
     );
 
     expect(JSON.parse(bridge.data ?? "{}")).toEqual({ count: 5 });
+  });
+
+  it("loads common Obsidian UI and workspace registration APIs without crashing", async () => {
+    const bridge = memoryBridge(allPermissions);
+    const runtime = await loadObsidianPlugin(
+      bundle(`
+        const { Plugin, PluginSettingTab, Setting, Menu, Component } = require("obsidian");
+        module.exports = class UiPlugin extends Plugin {
+          onload() {
+            this.addRibbonIcon("sparkles", "Run sample", () => {});
+            this.addStatusBarItem().setText("Ready");
+            this.addSettingTab(new class extends PluginSettingTab {
+              display() {
+                new Setting(this.containerEl).setName("Sample").addButton((button) => button.setButtonText("Run"));
+              }
+            }(this.app, this));
+            this.registerView("sample-view", () => {});
+            this.registerEditorExtension([]);
+            this.registerEditorSuggest({});
+            this.registerHoverLinkSource("sample-hover", {});
+            this.registerObsidianProtocolHandler("sample", () => {});
+            this.registerMarkdownPostProcessor(() => {});
+            this.registerMarkdownCodeBlockProcessor("sample", () => {});
+            this.addChild(new Component());
+            new Menu().addItem((item) => item.setTitle("Open").setIcon("link").onClick(() => {})).showAtPosition({ x: 1, y: 2 });
+          }
+        };
+      `),
+      bridge,
+    );
+
+    expect(bridge.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "ribbon.registered",
+        "status-bar.registered",
+        "setting-tab.registered",
+        "markdown-processor.registered",
+        "api.unsupported",
+      ]),
+    );
+    expect(bridge.events.filter((event) => event.type === "api.unsupported").map((event) => (event.payload as { apiName: string }).apiName)).toEqual(
+      expect.arrayContaining(["Plugin.registerView", "Plugin.registerEditorExtension", "Plugin.registerEditorSuggest"]),
+    );
+
+    await runtime.unload();
   });
 
   it("cleans up managed styles on unload", () => {

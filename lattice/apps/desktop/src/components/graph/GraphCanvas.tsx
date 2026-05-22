@@ -1,7 +1,7 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-force";
 import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
 import { Maximize, Minus, Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useSettingsStore, type LabelMode } from "@/stores/settings-store";
 import type { GraphEdge, GraphFilters, GraphNode, GraphPayload } from "@/types/domain";
@@ -57,13 +57,19 @@ const ALPHA_DECAY = 0.034;
 const CLICK_THRESHOLD_PX = 5;
 const LINK_STRENGTH = 0.34;
 const HOVER_CAPTURE_SCREEN_PX = 18;
+const GRAPH_MIN_ZOOM = 0.04;
+const GRAPH_MAX_ZOOM = 24;
+const GRAPH_FIT_MAX_ZOOM = 2.4;
+const WHEEL_ZOOM_TARGET_SENSITIVITY = 0.0016;
+const WHEEL_ZOOM_SENSITIVITY = 0.00032;
+const WHEEL_ZOOM_DECAY_MS = 130;
+const WHEEL_ZOOM_MAX_VELOCITY = 0.55;
+const WHEEL_ZOOM_MAX_STEP = 0.055;
+const WHEEL_ZOOM_STOP_EPSILON = 0.00018;
+const BUTTON_ZOOM_FACTOR = 1.22;
+const CAMERA_SMOOTHING_MS = 42;
 const AUTO_LABEL_ZOOM = 1.35;
 const CLUSTER_LABEL_ZOOM = 1.75;
-const SWAY_MAX_PX = 8.0;
-const NODE_NEAR_SWAY_PX = 90;
-const SWAY_SPRING = 0.042;
-const SWAY_DAMPING = 0.87;
-const SWAY_MOUSE_FORCE = 0.07;
 const NODE_HOVER_MOTION_RADIUS_PX = 150;
 const NODE_HOVER_MOTION_MAX_PX = 10;
 const NODE_HOVER_PUSH = 0.11;
@@ -90,15 +96,19 @@ export function GraphCanvas({
   const simLinksRef = useRef<SimLink[]>([]);
   const sizeRef = useRef({ w: 900, h: 650 });
   const viewRef = useRef<ViewState>({ tx: 0, ty: 0, scale: 1 });
+  const targetViewRef = useRef<ViewState>({ tx: 0, ty: 0, scale: 1 });
+  const lastFrameAtRef = useRef<number | null>(null);
   const labelModeRef = useRef<LabelMode>(labelMode);
   const selectedIdRef = useRef<string | null>(selectedId);
   const hoveredIdRef = useRef<string | null>(hoveredId);
   const graphSettingsRef = useRef({ nodeScale: 1, edgeScale: 1, showArrows: true });
   const hoverLockRef = useRef<string | null>(null);
-  const swayStateRef = useRef({ ox: 0, oy: 0, vx: 0, vy: 0 });
   const nodeMotionRef = useRef<Map<string, NodeMotion>>(new Map());
   const mousePosRef = useRef<{ sx: number; sy: number } | null>(null);
-  const prevMousePosRef = useRef<{ sx: number; sy: number } | null>(null);
+  const wheelZoomRef = useRef<{
+    velocity: number;
+    focus: { x: number; y: number } | null;
+  }>({ velocity: 0, focus: null });
 
   const pointerRef = useRef<{
     startX: number;
@@ -115,9 +125,6 @@ export function GraphCanvas({
   const [hoverPreviewId, setHoverPreviewId] = useState<string | null>(null);
   const graphSettings = useSettingsStore((state) => state.graph);
 
-  useEffect(() => {
-    viewRef.current = view;
-  }, [view]);
   useEffect(() => {
     labelModeRef.current = labelMode;
   }, [labelMode]);
@@ -327,44 +334,19 @@ export function GraphCanvas({
         }
         const ctx = canvas.getContext("2d");
         if (ctx) {
-          // Spring-physics sway: mouse movement pushes graph, spring pulls back, damps to rest
-          const sway = swayStateRef.current;
+          const now = window.performance.now();
+          const lastFrameAt = lastFrameAtRef.current ?? now - 16.7;
+          lastFrameAtRef.current = now;
+          const frameDeltaMs = now - lastFrameAt;
+          applyWheelZoom(frameDeltaMs);
+          viewRef.current = easeCamera(viewRef.current, targetViewRef.current, frameDeltaMs);
+
           const mouse = mousePosRef.current;
-          const prevMouse = prevMousePosRef.current;
-          let canPush = false;
-          if (mouse && !pointerRef.current) {
-            const v = viewRef.current;
-            const sz = sizeRef.current;
-            let nearNode = false;
-            for (const n of simNodesRef.current) {
-              const nx = sz.w / 2 + ((n.x ?? 0) + v.tx) * v.scale;
-              const ny = sz.h / 2 + ((n.y ?? 0) + v.ty) * v.scale;
-              const ddx = mouse.sx - nx;
-              const ddy = mouse.sy - ny;
-              if (ddx * ddx + ddy * ddy <= NODE_NEAR_SWAY_PX * NODE_NEAR_SWAY_PX) {
-                nearNode = true;
-                break;
-              }
-            }
-            canPush = !nearNode;
-          }
-          if (canPush && prevMouse && mouse) {
-            sway.vx += (mouse.sx - prevMouse.sx) * SWAY_MOUSE_FORCE;
-            sway.vy += (mouse.sy - prevMouse.sy) * SWAY_MOUSE_FORCE;
-          }
-          sway.vx -= SWAY_SPRING * sway.ox;
-          sway.vy -= SWAY_SPRING * sway.oy;
-          sway.vx *= SWAY_DAMPING;
-          sway.vy *= SWAY_DAMPING;
-          sway.ox = clamp(sway.ox + sway.vx, -SWAY_MAX_PX, SWAY_MAX_PX);
-          sway.oy = clamp(sway.oy + sway.vy, -SWAY_MAX_PX, SWAY_MAX_PX);
-          prevMousePosRef.current = mouse ? { sx: mouse.sx, sy: mouse.sy } : null;
           updateNodeMotion(
             simNodesRef.current,
             nodeMotionRef.current,
             mouse && !pointerRef.current ? mouse : null,
             worldToScreen,
-            sway,
             timeRef.current,
           );
 
@@ -372,7 +354,6 @@ export function GraphCanvas({
           ctx.clearRect(0, 0, size.w, size.h);
           drawBackground(ctx, size);
           ctx.save();
-          ctx.translate(sway.ox, sway.oy);
           const focusId = hoveredIdRef.current ?? selectedIdRef.current;
           const focusSet = focusId
             ? new Set<string>([focusId, ...(adjacencyRef.current.get(focusId) ?? [])])
@@ -426,26 +407,37 @@ export function GraphCanvas({
     };
   }, [worldToScreen]);
 
-  function zoom(delta: number, focusScreen?: { x: number; y: number }) {
-    setView((current) => {
-      const next = clamp(current.scale + delta, 0.18, 4);
-      const size = sizeRef.current;
-      if (!focusScreen) return { ...current, scale: next };
-      const before = {
-        x: (focusScreen.x - size.w / 2) / current.scale - current.tx,
-        y: (focusScreen.y - size.h / 2) / current.scale - current.ty,
-      };
-      const tx = (focusScreen.x - size.w / 2) / next - before.x;
-      const ty = (focusScreen.y - size.h / 2) / next - before.y;
-      return { tx, ty, scale: next };
-    });
+  function setCameraTarget(next: ViewState | ((current: ViewState) => ViewState), immediate = false) {
+    const resolved = typeof next === "function" ? next(targetViewRef.current) : next;
+    targetViewRef.current = resolved;
+    setView(resolved);
+    if (immediate) viewRef.current = resolved;
+  }
+
+  function zoomByFactor(factor: number, focusScreen?: { x: number; y: number }, immediate = false) {
+    setCameraTarget((current) => zoomView(current, factor, sizeRef.current, focusScreen), immediate);
+  }
+
+  function applyWheelZoom(deltaMs: number) {
+    const wheel = wheelZoomRef.current;
+    if (!wheel.focus || Math.abs(wheel.velocity) < WHEEL_ZOOM_STOP_EPSILON) {
+      wheel.velocity = 0;
+      return;
+    }
+
+    const step = clamp(wheel.velocity, -WHEEL_ZOOM_MAX_STEP, WHEEL_ZOOM_MAX_STEP);
+    targetViewRef.current = zoomView(targetViewRef.current, Math.exp(step), sizeRef.current, wheel.focus);
+    setView(targetViewRef.current);
+
+    const safeDelta = Number.isFinite(deltaMs) ? clamp(deltaMs, 1, 50) : 16.7;
+    wheel.velocity *= Math.exp(-safeDelta / WHEEL_ZOOM_DECAY_MS);
   }
 
   function fit() {
     const nodes = simNodesRef.current;
     const size = sizeRef.current;
     if (!nodes.length) {
-      setView({ tx: 0, ty: 0, scale: 1 });
+      setCameraTarget({ tx: 0, ty: 0, scale: 1 }, true);
       return;
     }
     let minX = Infinity;
@@ -462,10 +454,10 @@ export function GraphCanvas({
     }
     const w = Math.max(1, maxX - minX);
     const h = Math.max(1, maxY - minY);
-    const scale = clamp(Math.min((size.w - 80) / w, (size.h - 80) / h), 0.18, 2.4);
+    const scale = clamp(Math.min((size.w - 80) / w, (size.h - 80) / h), GRAPH_MIN_ZOOM, GRAPH_FIT_MAX_ZOOM);
     const tx = -(minX + maxX) / 2;
     const ty = -(minY + maxY) / 2;
-    setView({ tx, ty, scale });
+    setCameraTarget({ tx, ty, scale });
   }
 
   function setHoverLock(nextId: string | null) {
@@ -496,6 +488,8 @@ export function GraphCanvas({
         ref={canvasRef}
         className="h-full w-full cursor-grab active:cursor-grabbing"
         onPointerDown={(event) => {
+          targetViewRef.current = viewRef.current;
+          setView(viewRef.current);
           const rect = event.currentTarget.getBoundingClientRect();
           const sx = event.clientX - rect.left;
           const sy = event.clientY - rect.top;
@@ -554,11 +548,14 @@ export function GraphCanvas({
             }
             if (tracker.mode === "pan") {
               const dragScale = viewRef.current.scale;
-              setView((current) => ({
-                ...current,
-                tx: tracker.panFromTx + dx / dragScale,
-                ty: tracker.panFromTy + dy / dragScale,
-              }));
+              setCameraTarget(
+                {
+                  ...viewRef.current,
+                  tx: tracker.panFromTx + dx / dragScale,
+                  ty: tracker.panFromTy + dy / dragScale,
+                },
+                true,
+              );
               return;
             }
           }
@@ -632,7 +629,6 @@ export function GraphCanvas({
         }}
         onPointerLeave={() => {
           mousePosRef.current = null;
-          prevMousePosRef.current = null;
           setHoverLock(null);
           if (hoveredIdRef.current !== null) {
             hoveredIdRef.current = null;
@@ -670,16 +666,30 @@ export function GraphCanvas({
           event.preventDefault();
           const rect = event.currentTarget.getBoundingClientRect();
           const focus = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-          zoom(event.deltaY > 0 ? -0.12 : 0.12, focus);
+          const delta = wheelDeltaPixels(event, sizeRef.current.h);
+          targetViewRef.current = zoomView(
+            targetViewRef.current,
+            Math.exp(-delta * WHEEL_ZOOM_TARGET_SENSITIVITY),
+            sizeRef.current,
+            focus,
+          );
+          setView(targetViewRef.current);
+          const wheel = wheelZoomRef.current;
+          wheel.focus = focus;
+          wheel.velocity = clamp(
+            wheel.velocity - delta * WHEEL_ZOOM_SENSITIVITY,
+            -WHEEL_ZOOM_MAX_VELOCITY,
+            WHEEL_ZOOM_MAX_VELOCITY,
+          );
         }}
       />
 
       <div className="absolute bottom-4 left-4 flex items-center gap-2">
         <div className="glass flex gap-1 rounded-xl p-1">
-          <IconButton label="Zoom in" onClick={() => zoom(0.2)}>
+          <IconButton label="Zoom in" onClick={() => zoomByFactor(BUTTON_ZOOM_FACTOR)}>
             <Plus size={15} />
           </IconButton>
-          <IconButton label="Zoom out" onClick={() => zoom(-0.2)}>
+          <IconButton label="Zoom out" onClick={() => zoomByFactor(1 / BUTTON_ZOOM_FACTOR)}>
             <Minus size={15} />
           </IconButton>
           <IconButton label="Fit graph" onClick={fit}>
@@ -694,6 +704,53 @@ export function GraphCanvas({
       {hoverPreviewId && <GraphNodePreview node={simNodesRef.current.find((n) => n.id === hoverPreviewId) ?? null} />}
     </div>
   );
+}
+
+function wheelDeltaPixels(event: WheelEvent<HTMLCanvasElement>, viewportHeight: number) {
+  if (event.deltaMode === 1) return event.deltaY * 16;
+  if (event.deltaMode === 2) return event.deltaY * viewportHeight;
+  return event.deltaY;
+}
+
+function zoomView(
+  current: ViewState,
+  factor: number,
+  size: { w: number; h: number },
+  focusScreen?: { x: number; y: number },
+): ViewState {
+  const next = clamp(current.scale * factor, GRAPH_MIN_ZOOM, GRAPH_MAX_ZOOM);
+  if (!focusScreen) return { ...current, scale: next };
+  const before = {
+    x: (focusScreen.x - size.w / 2) / current.scale - current.tx,
+    y: (focusScreen.y - size.h / 2) / current.scale - current.ty,
+  };
+  const tx = (focusScreen.x - size.w / 2) / next - before.x;
+  const ty = (focusScreen.y - size.h / 2) / next - before.y;
+  return { tx, ty, scale: next };
+}
+
+function easeCamera(current: ViewState, target: ViewState, deltaMs: number): ViewState {
+  const safeDelta = Number.isFinite(deltaMs) ? clamp(deltaMs, 1, 50) : 16.7;
+  const blend = 1 - Math.exp(-safeDelta / CAMERA_SMOOTHING_MS);
+  const next = {
+    tx: lerp(current.tx, target.tx, blend),
+    ty: lerp(current.ty, target.ty, blend),
+    scale: Math.exp(lerp(Math.log(current.scale), Math.log(target.scale), blend)),
+  };
+
+  if (
+    Math.abs(next.tx - target.tx) < 0.01 &&
+    Math.abs(next.ty - target.ty) < 0.01 &&
+    Math.abs(next.scale - target.scale) < 0.001
+  ) {
+    return target;
+  }
+
+  return next;
+}
+
+function lerp(from: number, to: number, amount: number) {
+  return from + (to - from) * amount;
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, size: { w: number; h: number }) {
@@ -712,7 +769,6 @@ function updateNodeMotion(
   motionById: Map<string, NodeMotion>,
   mouse: { sx: number; sy: number } | null,
   worldToScreen: (x: number, y: number) => { x: number; y: number },
-  sway: { ox: number; oy: number },
   time: number,
 ) {
   const liveIds = new Set<string>();
@@ -730,8 +786,8 @@ function updateNodeMotion(
     let uy = 0;
     if (mouse) {
       const p = worldToScreen(node.x ?? 0, node.y ?? 0);
-      const dx = p.x + sway.ox - mouse.sx;
-      const dy = p.y + sway.oy - mouse.sy;
+      const dx = p.x - mouse.sx;
+      const dy = p.y - mouse.sy;
       const dist = Math.max(1, Math.hypot(dx, dy));
       influence = Math.pow(clamp(1 - dist / NODE_HOVER_MOTION_RADIUS_PX, 0, 1), 1.7);
       ux = dx / dist;
