@@ -70,6 +70,8 @@ const BUTTON_ZOOM_FACTOR = 1.22;
 const CAMERA_SMOOTHING_MS = 42;
 const AUTO_LABEL_ZOOM = 1.35;
 const CLUSTER_LABEL_ZOOM = 1.75;
+const INACTIVE_NODE_ALPHA = 0.16;
+const INACTIVE_EDGE_ALPHA = 0.14;
 const NODE_HOVER_MOTION_RADIUS_PX = 150;
 const NODE_HOVER_MOTION_MAX_PX = 10;
 const NODE_HOVER_PUSH = 0.11;
@@ -361,14 +363,14 @@ export function GraphCanvas({
           // Smooth lerp node/edge alpha values toward target each frame
           const LERP = 0.16;
           for (const node of simNodesRef.current) {
-            const target = !focusSet || focusSet.has(node.id) ? 1 : 0.32;
+            const target = !focusSet || focusSet.has(node.id) ? 1 : INACTIVE_NODE_ALPHA;
             const current = nodeAlphaRef.current.get(node.id) ?? 1;
             nodeAlphaRef.current.set(node.id, current + (target - current) * LERP);
           }
           for (const link of simLinksRef.current) {
             const sourceId = (link.source as SimNode).id;
             const targetId = (link.target as SimNode).id;
-            const target = !focusSet || (focusSet.has(sourceId) && focusSet.has(targetId)) ? 1 : 0.42;
+            const target = !focusSet || (focusSet.has(sourceId) && focusSet.has(targetId)) ? 1 : INACTIVE_EDGE_ALPHA;
             const current = edgeAlphaRef.current.get(link.id) ?? 1;
             edgeAlphaRef.current.set(link.id, current + (target - current) * LERP);
           }
@@ -864,7 +866,7 @@ function drawEdges(
     const sourceColor = colorsFor(sourceNode, false, false);
     const targetColor = colorsFor(targetNode, false, false);
 
-    ctx.globalAlpha = Math.max(0.36, focusAlpha);
+    ctx.globalAlpha = focusAlpha;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.quadraticCurveTo(mx + (-dy / len) * curve, my + (dx / len) * curve, b.x, b.y);
