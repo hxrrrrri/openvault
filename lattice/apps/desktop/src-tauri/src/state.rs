@@ -11,7 +11,32 @@ use lattice_plugin_runtime::{
     inspect_plugin_folder, read_runtime_bundle, PermissionGrant, PluginInfo, PluginManifest,
     PluginRuntimeBundle,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+const ENABLED_PLUGINS_FILE: &str = "community-plugins.json";
+const PLUGIN_GRANTS_FILE: &str = "lattice-plugin-grants.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PluginGrantsRecord {
+    #[serde(default)]
+    granted_permissions: Vec<PermissionGrant>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+struct PluginGrantsFile(std::collections::BTreeMap<String, PluginGrantsRecord>);
+
+impl From<std::collections::BTreeMap<String, PluginGrantsRecord>> for PluginGrantsFile {
+    fn from(value: std::collections::BTreeMap<String, PluginGrantsRecord>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PluginGrantsFile> for std::collections::BTreeMap<String, PluginGrantsRecord> {
+    fn from(value: PluginGrantsFile) -> Self {
+        value.0
+    }
+}
 
 use crate::terminal::TerminalRegistry;
 
@@ -142,6 +167,39 @@ impl AppState {
         Ok(guard.clone())
     }
 
+    pub fn uninstall_plugin(&self, id: String) -> Result<bool, String> {
+        let removed = {
+            let mut guard = self
+                .plugins
+                .lock()
+                .map_err(|_| "plugin lock poisoned".to_string())?;
+            let before = guard.len();
+            let target = guard.iter().find(|plugin| plugin.id == id).cloned();
+            guard.retain(|plugin| plugin.id != id);
+            (before != guard.len(), target, guard.clone())
+        };
+        let (changed, target, snapshot) = removed;
+        if !changed {
+            return Err(format!("plugin not installed: {id}"));
+        }
+        if let Some(plugin) = target {
+            let installed_path = PathBuf::from(&plugin.installed_path);
+            if installed_path.is_dir() {
+                let _ = fs::remove_dir_all(&installed_path);
+            }
+            let _ = self.with_workspace(|workspace| {
+                let managed = workspace.vault.lattice_dir().join("plugins").join(&id);
+                if managed.is_dir() {
+                    let _ = fs::remove_dir_all(managed);
+                }
+                Ok(())
+            });
+        }
+        self.persist_enabled_plugins(&snapshot).ok();
+        self.persist_plugin_grants(&snapshot).ok();
+        Ok(true)
+    }
+
     pub fn install_plugin(&self, plugin: PluginInfo) -> Result<PluginInfo, String> {
         let mut guard = self
             .plugins
@@ -157,15 +215,19 @@ impl AppState {
     }
 
     pub fn set_plugin_enabled(&self, id: String, enabled: bool) -> Result<bool, String> {
-        let mut guard = self
-            .plugins
-            .lock()
-            .map_err(|_| "plugin lock poisoned".to_string())?;
-        let plugin = guard
-            .iter_mut()
-            .find(|plugin| plugin.id == id)
-            .ok_or_else(|| format!("plugin not installed: {id}"))?;
-        plugin.enabled = enabled;
+        let snapshot = {
+            let mut guard = self
+                .plugins
+                .lock()
+                .map_err(|_| "plugin lock poisoned".to_string())?;
+            let plugin = guard
+                .iter_mut()
+                .find(|plugin| plugin.id == id)
+                .ok_or_else(|| format!("plugin not installed: {id}"))?;
+            plugin.enabled = enabled;
+            guard.clone()
+        };
+        self.persist_enabled_plugins(&snapshot).ok();
         Ok(true)
     }
 
@@ -221,14 +283,95 @@ impl AppState {
         id: String,
         permissions: Vec<PermissionGrant>,
     ) -> Result<bool, String> {
-        let mut guard = self
-            .plugins
-            .lock()
-            .map_err(|_| "plugin lock poisoned".to_string())?;
-        if let Some(plugin) = guard.iter_mut().find(|plugin| plugin.id == id) {
-            plugin.granted_permissions = permissions;
-        }
+        let snapshot = {
+            let mut guard = self
+                .plugins
+                .lock()
+                .map_err(|_| "plugin lock poisoned".to_string())?;
+            if let Some(plugin) = guard.iter_mut().find(|plugin| plugin.id == id) {
+                plugin.granted_permissions = permissions;
+            }
+            guard.clone()
+        };
+        self.persist_plugin_grants(&snapshot).ok();
         Ok(true)
+    }
+
+    fn persist_enabled_plugins(&self, plugins: &[PluginInfo]) -> Result<(), String> {
+        self.with_workspace(|workspace| {
+            let path = workspace
+                .vault
+                .root
+                .join(".obsidian")
+                .join(ENABLED_PLUGINS_FILE);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let enabled: Vec<&str> = plugins
+                .iter()
+                .filter(|plugin| plugin.enabled)
+                .map(|plugin| plugin.id.as_str())
+                .collect();
+            let json = serde_json::to_string_pretty(&enabled).map_err(|error| error.to_string())?;
+            fs::write(path, json).map_err(|error| error.to_string())?;
+            Ok(())
+        })
+    }
+
+    fn persist_plugin_grants(&self, plugins: &[PluginInfo]) -> Result<(), String> {
+        self.with_workspace(|workspace| {
+            let path = workspace.vault.lattice_dir().join(PLUGIN_GRANTS_FILE);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let payload: PluginGrantsFile = plugins
+                .iter()
+                .map(|plugin| {
+                    (
+                        plugin.id.clone(),
+                        PluginGrantsRecord {
+                            granted_permissions: plugin.granted_permissions.clone(),
+                        },
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+                .into();
+            let json = serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())?;
+            fs::write(path, json).map_err(|error| error.to_string())?;
+            Ok(())
+        })
+    }
+
+    fn load_persisted_state(&self, root: &Path, plugins: &mut [PluginInfo]) {
+        let enabled_path = root.join(".obsidian").join(ENABLED_PLUGINS_FILE);
+        if let Ok(raw) = fs::read_to_string(&enabled_path) {
+            if let Ok(ids) = serde_json::from_str::<Vec<String>>(&raw) {
+                let set: std::collections::HashSet<String> = ids.into_iter().collect();
+                for plugin in plugins.iter_mut() {
+                    plugin.enabled = set.contains(&plugin.id);
+                }
+            }
+        }
+        let grants_path = root.join(".lattice").join(PLUGIN_GRANTS_FILE);
+        if let Ok(raw) = fs::read_to_string(&grants_path) {
+            if let Ok(map) = serde_json::from_str::<PluginGrantsFile>(&raw) {
+                let map: std::collections::BTreeMap<String, PluginGrantsRecord> = map.into();
+                for plugin in plugins.iter_mut() {
+                    if let Some(record) = map.get(&plugin.id) {
+                        for grant in plugin.granted_permissions.iter_mut() {
+                            if let Some(saved) = record
+                                .granted_permissions
+                                .iter()
+                                .find(|saved| saved.permission == grant.permission)
+                            {
+                                grant.granted = saved.granted;
+                                grant.last_used_at = saved.last_used_at.clone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn assert_plugin_permission(&self, id: &str, permission: &str) -> Result<(), String> {
@@ -266,6 +409,17 @@ impl AppState {
                 .map_err(|_| "workspace lock poisoned".to_string())?;
             *guard = Some(AppWorkspace { vault, db });
         }
+        let root_for_persist = {
+            let guard = self
+                .workspace
+                .lock()
+                .map_err(|_| "workspace lock poisoned".to_string())?;
+            guard
+                .as_ref()
+                .map(|w| w.vault.root.clone())
+                .ok_or_else(|| "no vault is open".to_string())?
+        };
+        self.load_persisted_state(&root_for_persist, &mut discovered_plugins);
         if let Ok(mut plugins) = self.plugins.lock() {
             for plugin in &mut discovered_plugins {
                 if let Some(existing) = plugins.iter().find(|existing| existing.id == plugin.id) {

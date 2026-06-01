@@ -223,6 +223,7 @@ impl TerminalRegistry {
         Ok(true)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_shell_fallback(
         &self,
         requested_id: &str,
@@ -259,6 +260,7 @@ impl TerminalRegistry {
         Ok(info)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_pty_session(
         &self,
         adapter: &CliAdapter,

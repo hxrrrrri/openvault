@@ -18,8 +18,9 @@ import { commands, type ImportedAsset } from "@/lib/commands";
 import { countWords } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
-import { useVaultStore } from "@/stores/vault-store";
+import { parsePluginViewPath, useVaultStore } from "@/stores/vault-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { PluginViewContainer } from "@/components/plugins/PluginViewContainer";
 import type { FileNode } from "@/types/domain";
 
 const BG_PRESETS: Array<{ id: string; label: string; bg: string; accent: string }> = [
@@ -189,9 +190,25 @@ export function EditorWorkspace() {
   );
 
   const bgPreset = useMemo(() => extractBgPreset(activeNote?.content ?? ""), [activeNote?.content]);
+  const activePath = useVaultStore((state) => state.activePath);
+  const pluginViewType = activePath ? parsePluginViewPath(activePath) : null;
+
+  if (pluginViewType && activePath) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col">
+        <TabBar />
+        <PluginViewContainer viewType={pluginViewType} viewPath={activePath} />
+      </div>
+    );
+  }
 
   if (!activeNote) {
-    return <div className="grid flex-1 place-items-center text-[var(--text-3)]">Open or create a note.</div>;
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col">
+        <TabBar />
+        <div className="grid flex-1 place-items-center text-[var(--text-3)]">Open or create a note.</div>
+      </div>
+    );
   }
 
   const showEditor = editorMode === "edit" || editorMode === "split";

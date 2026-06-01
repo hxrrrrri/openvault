@@ -26,7 +26,15 @@
       "Bash(node -e \"const d=require\\('C:/Users/haris/AppData/Local/Temp/obsidian_re/i18n_dump.json'\\); console.log\\('=== commands ==='\\); d.commands.forEach\\(s=>console.log\\(' ',s\\)\\); console.log\\('=== formulas ==='\\); d.formulas.forEach\\(s=>console.log\\(' ',s\\)\\); console.log\\('=== funcs ==='\\); d.funcs.forEach\\(s=>console.log\\(' ',s\\)\\);\")",
       "Bash(node -e \"const d=require\\('C:/Users/haris/AppData/Local/Temp/obsidian_re/i18n_dump.json'\\); ['bases','canvas','graphView','appearance','sync','publish','dailyNotes','search','quickSwitcher','backlinks','outline','templates','workspaces','fileRecovery','noteComposer','audioRecorder','wordCount','randomNote','tagPane','properties','pagePreview','bookmarks','customCss','commandPalette','slides','outgoingLinks','footnotesPane','openWithDefaultApp','translucency','slashCommand','editorStatus','uniqueNoteCreator','markdownFormatImporter','webViewer','pdf','callout','type','nouns'].forEach\\(k=>{ console.log\\('===',k,'==='\\); \\(d[k]||[]\\).forEach\\(s=>console.log\\(' ',s\\)\\); }\\);\")",
       "Bash(node -e \"const d=require\\('C:/Users/haris/AppData/Local/Temp/obsidian_re/i18n_dump.json'\\); ['dailyNotes','search','quickSwitcher','fileExplorer','properties','hotkeys','fileRecovery','templates','workspaces','customCss','pdf','webViewer','callout','type','nouns','bookmarks','mobileToolbar','audioRecorder','noteComposer','wordCount','randomNote','outline','tagPane','footnotesPane','pagePreview','openWithDefaultApp','translucency','slashCommand','editorStatus','uniqueNoteCreator','markdownFormatImporter','outgoingLinks','backlinks'].forEach\\(k=>{ console.log\\('===',k,'==='\\); \\(d[k]||[]\\).forEach\\(s=>console.log\\(' ',s\\)\\); }\\);\")",
-      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/mine5.js\")"
+      "Bash(node \"C:/Users/haris/AppData/Local/Temp/obsidian_re/mine5.js\")",
+      "Bash(cargo clippy *)",
+      "Bash(cargo test *)",
+      "Bash(pnpm build *)",
+      "Bash(cargo check *)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm desktop:web)",
+      "Bash(wait)",
+      "Read(//c/project_function_calls/openvault/lattice/apps/desktop/src/features/plugins/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\haris\\AppData\\Local\\Temp\\obsidian_re"

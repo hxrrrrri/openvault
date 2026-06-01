@@ -4,6 +4,7 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
+import { pluginSuggestCompletions } from "@/features/plugins/editor-suggest-bridge";
 
 interface NoteHint {
   path: string;
@@ -204,7 +205,12 @@ function tagCompletions(source: CompletionDataSource) {
 
 export function latticeCompletions(source: CompletionDataSource) {
   return autocompletion({
-    override: [slashCompletions, wikilinkCompletions(source), tagCompletions(source)],
+    override: [
+      pluginSuggestCompletions,
+      slashCompletions,
+      wikilinkCompletions(source),
+      tagCompletions(source),
+    ],
     activateOnTyping: true,
     closeOnBlur: true,
     icons: false,

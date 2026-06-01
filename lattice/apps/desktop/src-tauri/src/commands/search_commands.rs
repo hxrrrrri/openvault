@@ -169,13 +169,10 @@ fn branch_score(branch: &QueryBranch, candidate: &SearchCandidate) -> Option<f64
         }
     }
     for (key, expected) in &branch.property_values {
-        let Some((_, value)) = candidate
+        let (_, value) = candidate
             .properties
             .iter()
-            .find(|(candidate_key, _)| candidate_key.eq_ignore_ascii_case(key))
-        else {
-            return None;
-        };
+            .find(|(candidate_key, _)| candidate_key.eq_ignore_ascii_case(key))?;
         if !value_to_search_text(value)
             .to_lowercase()
             .contains(expected)

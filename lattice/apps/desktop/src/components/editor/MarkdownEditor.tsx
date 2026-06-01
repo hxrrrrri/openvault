@@ -2,13 +2,15 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { markdown } from "@codemirror/lang-markdown";
 import { codeFolding, foldGutter, foldKeymap, indentUnit } from "@codemirror/language";
 import { search, searchKeymap } from "@codemirror/search";
-import { EditorState, RangeSetBuilder } from "@codemirror/state";
+import { Compartment, EditorState, RangeSetBuilder } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, keymap, lineNumbers, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import { latticeCompletions, type CompletionDataSource } from "@/components/editor/completions";
 import { FormatToolbar } from "@/components/editor/FormatToolbar";
 import { livePreview, livePreviewClickHandler, livePreviewTheme } from "@/components/editor/live-preview";
 import { useSettingsStore } from "@/stores/settings-store";
+import { listEditorExtensions, subscribeEditorExtensions } from "@/features/plugins/editor-extension-registry";
+import { setActiveEditor } from "@/features/plugins/active-editor";
 
 interface MarkdownEditorProps {
   value: string;
@@ -140,6 +142,7 @@ export function MarkdownEditor({
   const onOpenLinkRef = useRef(onOpenLink);
   const sourceRef = useRef(completionSource);
   const editorSettings = useSettingsStore((state) => state.editor);
+  const pluginExtCompartment = useRef(new Compartment()).current;
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -189,6 +192,7 @@ export function MarkdownEditor({
         indentWithTab,
       ]),
       latticeCompletions(source),
+      pluginExtCompartment.of(listEditorExtensions()),
       livePreviewEnabled ? livePreview : [],
       livePreviewEnabled ? livePreviewTheme : [],
       livePreviewEnabled && onOpenLink
@@ -203,7 +207,9 @@ export function MarkdownEditor({
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
     exposeView?.(view);
+    setActiveEditor(view, null);
     return () => {
+      setActiveEditor(null, null);
       view.destroy();
       viewRef.current = null;
       exposeView?.(null);
@@ -230,6 +236,16 @@ export function MarkdownEditor({
     if (!view || view.state.doc.toString() === value) return;
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
   }, [value]);
+
+  useEffect(() => {
+    return subscribeEditorExtensions(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: pluginExtCompartment.reconfigure(listEditorExtensions()),
+      });
+    });
+  }, [pluginExtCompartment]);
 
   return (
     <div className="relative h-full min-h-0">

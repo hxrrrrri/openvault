@@ -226,6 +226,11 @@ pub async fn enable_plugin(id: String, state: State<'_, AppState>) -> Result<boo
 }
 
 #[tauri::command]
+pub async fn uninstall_plugin(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    state.uninstall_plugin(id)
+}
+
+#[tauri::command]
 pub async fn disable_plugin(id: String, state: State<'_, AppState>) -> Result<bool, String> {
     state.set_plugin_enabled(id, false)
 }
@@ -262,6 +267,89 @@ pub async fn update_plugin_permissions(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     state.update_plugin_permissions(id, permissions)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginRequestUrlInput {
+    pub url: String,
+    #[serde(default)]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub headers: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub plugin_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginRequestUrlResult {
+    pub status: u16,
+    pub text: String,
+    pub headers: HashMap<String, String>,
+    pub json: Option<serde_json::Value>,
+    pub array_buffer: Option<Vec<u8>>,
+}
+
+#[tauri::command]
+pub async fn plugin_request_url(
+    input: PluginRequestUrlInput,
+    state: State<'_, AppState>,
+) -> Result<PluginRequestUrlResult, String> {
+    if let Some(plugin_id) = input.plugin_id.as_deref() {
+        state.assert_plugin_permission(plugin_id, "network:http")?;
+    }
+    let client = http_client()?;
+    let method = input
+        .method
+        .as_deref()
+        .map(|m| m.to_ascii_uppercase())
+        .unwrap_or_else(|| "GET".to_string());
+    let mut builder = client
+        .request(
+            reqwest::Method::from_bytes(method.as_bytes())
+                .map_err(|error| format!("invalid HTTP method: {error}"))?,
+            &input.url,
+        );
+    if let Some(headers) = input.headers.as_ref() {
+        for (name, value) in headers {
+            builder = builder.header(name.as_str(), value.as_str());
+        }
+    }
+    if let Some(content_type) = input.content_type.as_deref() {
+        builder = builder.header("Content-Type", content_type);
+    }
+    if let Some(body) = input.body.as_deref() {
+        builder = builder.body(body.to_string());
+    }
+    let response = builder
+        .send()
+        .await
+        .map_err(|error| format!("request failed for {}: {}", input.url, error))?;
+    let status = response.status().as_u16();
+    let mut headers = HashMap::new();
+    for (name, value) in response.headers().iter() {
+        if let Ok(value_str) = value.to_str() {
+            headers.insert(name.as_str().to_string(), value_str.to_string());
+        }
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| format!("could not read response body: {error}"))?;
+    let text = String::from_utf8_lossy(&bytes).to_string();
+    let json = serde_json::from_slice(&bytes).ok();
+    Ok(PluginRequestUrlResult {
+        status,
+        text,
+        headers,
+        json,
+        array_buffer: Some(bytes.to_vec()),
+    })
 }
 
 fn resolve_obsidian_plugins_dir(path: &Path) -> Result<PathBuf, String> {

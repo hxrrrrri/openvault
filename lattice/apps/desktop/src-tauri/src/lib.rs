@@ -24,6 +24,8 @@ pub fn run() {
             scan_vault,
             watch_vault,
             list_files,
+            read_vault_binary,
+            write_vault_binary,
             read_note,
             write_note,
             create_note,
@@ -64,10 +66,12 @@ pub fn run() {
             install_obsidian_plugin_from_sources,
             enable_plugin,
             disable_plugin,
+            uninstall_plugin,
             read_plugin_runtime_bundle,
             read_plugin_data,
             write_plugin_data,
-            update_plugin_permissions
+            update_plugin_permissions,
+            plugin_request_url
         ])
         .run(tauri::generate_context!())
         .expect("failed to run LATTICE");

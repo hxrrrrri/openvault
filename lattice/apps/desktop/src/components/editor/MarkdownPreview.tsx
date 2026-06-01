@@ -1,7 +1,7 @@
 import "katex/dist/katex.min.css";
 
 import type { ReactNode } from "react";
-import { isValidElement, useEffect, useMemo, useState } from "react";
+import { isValidElement, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
@@ -9,6 +9,15 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { commands } from "@/lib/commands";
 import type { CollectionItem, CollectionQuery, SearchResult } from "@/types/domain";
+import {
+  getCodeBlockProcessor,
+  listPostProcessors,
+  runCodeBlockProcessor,
+  runPostProcessors,
+  subscribeProcessors,
+  type MarkdownPostProcessorContext,
+} from "@/features/plugins/processor-registry";
+import { ensureObsidianDomShim } from "@/features/plugins/obsidian-dom";
 
 interface MarkdownPreviewProps {
   content: string;
@@ -56,8 +65,28 @@ export function MarkdownPreview({
   onOpenNote,
 }: MarkdownPreviewProps) {
   const segments = splitCallouts(content);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const [processorVersion, setProcessorVersion] = useState(0);
+
+  useEffect(() => subscribeProcessors(() => setProcessorVersion((v) => v + 1)), []);
+
+  useEffect(() => {
+    if (!rootRef.current) return;
+    if (listPostProcessors().length === 0) return;
+    ensureObsidianDomShim();
+    const context: MarkdownPostProcessorContext = {
+      sourcePath: notePath ?? "",
+      frontmatter: null,
+    };
+    void runPostProcessors(rootRef.current, context);
+  }, [content, notePath, processorVersion]);
+
   return (
-    <article className="prose prose-invert max-w-none prose-headings:tracking-tight prose-a:text-[var(--violet-2)] prose-code:text-[var(--indigo)] lattice-prose">
+    <article
+      ref={rootRef}
+      className="prose prose-invert max-w-none prose-headings:tracking-tight prose-a:text-[var(--violet-2)] prose-code:text-[var(--indigo)] lattice-prose"
+      data-lattice-preview-root="true"
+    >
       {segments.map((segment, index) =>
         segment.kind === "callout" && segment.callout ? (
           <Callout
@@ -77,6 +106,22 @@ export function MarkdownPreview({
       )}
     </article>
   );
+}
+
+function PluginCodeBlock({ language, source, notePath }: { language: string; source: string; notePath?: string }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    ensureObsidianDomShim();
+    host.replaceChildren();
+    const context: MarkdownPostProcessorContext = {
+      sourcePath: notePath ?? "",
+      frontmatter: null,
+    };
+    void runCodeBlockProcessor(language, source, host, context);
+  }, [language, source, notePath]);
+  return <div ref={hostRef} className="lattice-plugin-codeblock" data-language={language} />;
 }
 
 function MarkdownChunk({
@@ -112,6 +157,9 @@ function MarkdownChunk({
           }
           if (language === "lattice-query" || language === "lattice-database") {
             return <EmbeddedCollection source={source} onOpenNote={onOpenNote} />;
+          }
+          if (language && getCodeBlockProcessor(language)) {
+            return <PluginCodeBlock language={language} source={source} notePath={notePath} />;
           }
           return (
             <code className={className} {...props}>

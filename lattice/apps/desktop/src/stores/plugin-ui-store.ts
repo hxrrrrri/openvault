@@ -13,6 +13,7 @@ export interface PluginStatusContribution {
   pluginId: string;
   text: string;
   element?: SerializedObsidianElement;
+  containerEl?: HTMLElement;
 }
 
 export interface PluginSettingContribution {
@@ -20,6 +21,7 @@ export interface PluginSettingContribution {
   pluginId: string;
   name: string;
   element?: SerializedObsidianElement;
+  containerEl?: HTMLElement;
 }
 
 export interface PluginNoticeContribution {

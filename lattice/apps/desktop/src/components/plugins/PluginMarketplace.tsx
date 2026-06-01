@@ -1,5 +1,5 @@
-import { AlertTriangle, BrainCircuit, Check, Code2, Download, Monitor, Palette, Puzzle, RefreshCw, Search, Shield } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, BrainCircuit, Check, Code2, Download, Monitor, Palette, Puzzle, RefreshCw, Search, Shield, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { GlowCard } from "@/components/ui/GlowCard";
 import { commands, type ObsidianCommunityPlugin } from "@/lib/commands";
@@ -7,7 +7,64 @@ import type { PermissionGrant, PluginInfo } from "@/types/domain";
 import { PermissionModal } from "@/components/plugins/PermissionModal";
 import { createObsidianPluginHost } from "@/features/plugins/obsidian-host";
 
+const COMMUNITY_CACHE_KEY = "lattice.community-plugins.cache.v1";
+const COMMUNITY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const COMMUNITY_PAGE_SIZE = 60;
+
+interface CommunityCachePayload {
+  fetchedAt: number;
+  plugins: ObsidianCommunityPlugin[];
+}
+
+function readCommunityCache(): CommunityCachePayload | null {
+  try {
+    const raw = window.localStorage.getItem(COMMUNITY_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CommunityCachePayload;
+    if (!parsed?.plugins || !Array.isArray(parsed.plugins)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCommunityCache(plugins: ObsidianCommunityPlugin[]): void {
+  try {
+    const payload: CommunityCachePayload = { fetchedAt: Date.now(), plugins };
+    window.localStorage.setItem(COMMUNITY_CACHE_KEY, JSON.stringify(payload));
+  } catch {}
+}
+
 const categories = ["All", "Editor", "Query", "Productivity", "AI", "Theme"];
+
+const SAFE_AUTO_GRANT_PERMISSIONS = new Set([
+  "vault:read",
+  "vault:write",
+  "workspace:read",
+  "workspace:layout",
+  "workspace:views",
+  "editor:read",
+  "editor:write",
+  "editor:commands",
+  "commands:register",
+  "ui:ribbon",
+  "ui:status-bar",
+  "ui:settings-tab",
+  "ui:modal",
+  "ui:theme",
+  "storage:plugin-data",
+]);
+
+function autoGrantSafePermissions(plugin: PluginInfo): PermissionGrant[] {
+  return plugin.grantedPermissions.map((grant) => ({
+    ...grant,
+    granted: grant.granted || SAFE_AUTO_GRANT_PERMISSIONS.has(grant.permission),
+  }));
+}
+
+function hasAnyGrants(plugin: PluginInfo): boolean {
+  return plugin.grantedPermissions.some((grant) => grant.granted);
+}
 
 export function PluginMarketplace() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
@@ -18,25 +75,55 @@ export function PluginMarketplace() {
   const [installingIds, setInstallingIds] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState("All");
   const [modalPlugin, setModalPlugin] = useState<PluginInfo | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [visibleCount, setVisibleCount] = useState(COMMUNITY_PAGE_SIZE);
+  const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
   const obsidianHost = useMemo(() => createObsidianPluginHost(), []);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void commands.listPlugins().then(setPlugins);
+    const cached = readCommunityCache();
+    if (cached && Date.now() - cached.fetchedAt < COMMUNITY_CACHE_TTL_MS) {
+      setCommunity(cached.plugins);
+    }
   }, []);
 
   const visible = plugins.filter((plugin) => filter === "All" || categoryFor(plugin) === filter);
   const installedIds = useMemo(() => new Set(plugins.map((plugin) => plugin.id)), [plugins]);
-  const visibleCommunity = useMemo(() => {
+  const filteredCommunity = useMemo(() => {
     const query = communityQuery.trim().toLowerCase();
     return community
       .filter((plugin) =>
         !query ||
         `${plugin.name} ${plugin.id} ${plugin.author} ${plugin.description} ${plugin.repo}`.toLowerCase().includes(query),
       )
-      .sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0) || a.name.localeCompare(b.name))
-      .slice(0, 24);
+      .sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0) || a.name.localeCompare(b.name));
   }, [community, communityQuery]);
+
+  const visibleCommunity = useMemo(
+    () => filteredCommunity.slice(0, visibleCount),
+    [filteredCommunity, visibleCount],
+  );
+
+  useEffect(() => {
+    setVisibleCount(COMMUNITY_PAGE_SIZE);
+  }, [communityQuery, community.length]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    if (visibleCount >= filteredCommunity.length) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          setVisibleCount((current) => Math.min(current + COMMUNITY_PAGE_SIZE, filteredCommunity.length));
+        }
+      }
+    });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [filteredCommunity.length, visibleCount]);
 
   async function savePermissions(plugin: PluginInfo, grants: PermissionGrant[]) {
     await commands.updatePluginPermissions(plugin.id, grants);
@@ -67,7 +154,9 @@ export function PluginMarketplace() {
     setCommunityLoading(true);
     setCommunityError(null);
     try {
-      setCommunity(await commands.listObsidianCommunityPlugins());
+      const list = await commands.listObsidianCommunityPlugins();
+      setCommunity(list);
+      writeCommunityCache(list);
     } catch (error) {
       setCommunityError(error instanceof Error ? error.message : "Could not load Obsidian community registry");
     } finally {
@@ -81,9 +170,66 @@ export function PluginMarketplace() {
     try {
       const installed = await commands.installObsidianCommunityPlugin(plugin.repo);
       mergeInstalledPlugins([installed]);
-      setInstallNotice(`Installed ${installed.name}. Review permissions, then enable it.`);
+      setInstallNotice(`Installed ${installed.name} v${installed.version}. Review permissions, then enable it.`);
     } catch (error) {
       setCommunityError(error instanceof Error ? error.message : `Could not install ${plugin.name}`);
+    } finally {
+      setInstallingIds((current) => {
+        const next = new Set(current);
+        next.delete(plugin.id);
+        return next;
+      });
+    }
+  }
+
+  async function updateCommunityPlugin(plugin: ObsidianCommunityPlugin) {
+    setInstallingIds((current) => new Set([...current, plugin.id]));
+    setCommunityError(null);
+    const existing = plugins.find((item) => item.id === plugin.id);
+    const oldVersion = existing?.version ?? null;
+    const wasEnabled = existing?.enabled ?? false;
+    try {
+      if (wasEnabled) {
+        try {
+          await obsidianHost.disable(plugin.id);
+        } catch (error) {
+          console.warn(`[update] disable before reinstall failed for ${plugin.id}`, error);
+        }
+      }
+      const reinstalled = await commands.installObsidianCommunityPlugin(plugin.repo);
+      mergeInstalledPlugins([reinstalled]);
+      let reenableError: string | null = null;
+      if (wasEnabled) {
+        try {
+          await obsidianHost.enable(reinstalled);
+          await commands.enablePlugin(reinstalled.id);
+          setPlugins((current) =>
+            current.map((item) => (item.id === reinstalled.id ? { ...item, enabled: true } : item)),
+          );
+        } catch (error) {
+          reenableError = error instanceof Error ? error.message : String(error);
+          try {
+            await commands.disablePlugin(reinstalled.id);
+          } catch {}
+          setPlugins((current) =>
+            current.map((item) => (item.id === reinstalled.id ? { ...item, enabled: false } : item)),
+          );
+        }
+      }
+      const newVersion = reinstalled.version;
+      if (reenableError) {
+        setInstallError(`Updated ${reinstalled.name} to v${newVersion} but failed to re-enable: ${reenableError}`);
+      } else if (oldVersion && newVersion && oldVersion !== newVersion) {
+        setInstallNotice(`Updated ${reinstalled.name}: v${oldVersion} → v${newVersion}`);
+      } else if (oldVersion === newVersion) {
+        setInstallNotice(`${reinstalled.name} is already at v${newVersion} (reinstalled).`);
+      } else {
+        setInstallNotice(`Updated ${reinstalled.name} to v${newVersion}.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Could not update ${plugin.name}`;
+      setCommunityError(message);
+      setInstallError(`Update failed for ${plugin.name}: ${message}`);
     } finally {
       setInstallingIds((current) => {
         const next = new Set(current);
@@ -99,29 +245,94 @@ export function PluginMarketplace() {
   }
 
   function setInstallNotice(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 2400);
+    setNotice({ kind: "success", message });
+    window.setTimeout(() => setNotice(null), 3500);
+  }
+
+  function setInstallError(message: string) {
+    setNotice({ kind: "error", message });
+    window.setTimeout(() => setNotice(null), 6000);
+  }
+
+  function setBusy(id: string, busy: boolean) {
+    setBusyIds((current) => {
+      const next = new Set(current);
+      if (busy) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }
 
   async function setPluginEnabled(plugin: PluginInfo, enabled: boolean) {
-    if (enabled) {
-      if (plugin.manifest.ecosystem === "obsidian") await obsidianHost.enable(plugin);
-      await commands.enablePlugin(plugin.id);
-    } else {
-      await obsidianHost.disable(plugin.id);
-      await commands.disablePlugin(plugin.id);
+    setBusy(plugin.id, true);
+    try {
+      let effectiveGrants = plugin.grantedPermissions;
+      if (enabled && plugin.manifest.ecosystem === "obsidian" && !hasAnyGrants(plugin)) {
+        effectiveGrants = autoGrantSafePermissions(plugin);
+        await commands.updatePluginPermissions(plugin.id, effectiveGrants);
+      }
+      if (enabled) {
+        if (plugin.manifest.ecosystem === "obsidian") {
+          await obsidianHost.enable({ ...plugin, grantedPermissions: effectiveGrants });
+        }
+        await commands.enablePlugin(plugin.id);
+        setInstallNotice(`Enabled ${plugin.name}`);
+      } else {
+        await obsidianHost.disable(plugin.id);
+        await commands.disablePlugin(plugin.id);
+        setInstallNotice(`Disabled ${plugin.name}`);
+      }
+      setPlugins((current) =>
+        current.map((item) =>
+          item.id === plugin.id
+            ? {
+                ...item,
+                enabled,
+                grantedPermissions: effectiveGrants,
+                compatibility:
+                  enabled && item.manifest.ecosystem === "obsidian"
+                    ? { ...item.compatibility, level: "functional" }
+                    : item.compatibility,
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error && error.stack ? error.stack.split("\n").slice(0, 6).join("\n") : "";
+      const verb = enabled ? "enable" : "disable";
+      const detail = stack ? `${raw}\n${stack}` : raw;
+      setInstallError(`Could not ${verb} ${plugin.name}: ${raw}`);
+      console.error(`[plugins] ${verb} failed for ${plugin.id}`, error);
+      try {
+        await obsidianHost.disable(plugin.id);
+        await commands.disablePlugin(plugin.id);
+      } catch {}
+      setPlugins((current) =>
+        current.map((item) =>
+          item.id === plugin.id
+            ? { ...item, enabled: false, compatibility: { ...item.compatibility, missingApiWarnings: [...new Set([detail, ...item.compatibility.missingApiWarnings])] } }
+            : item,
+        ),
+      );
+    } finally {
+      setBusy(plugin.id, false);
     }
-    setPlugins((current) =>
-      current.map((item) =>
-        item.id === plugin.id
-          ? {
-              ...item,
-              enabled,
-              compatibility: enabled && item.manifest.ecosystem === "obsidian" ? { ...item.compatibility, level: "functional" } : item.compatibility,
-            }
-          : item,
-      ),
-    );
+  }
+
+  async function uninstallPlugin(plugin: PluginInfo) {
+    if (!window.confirm(`Uninstall ${plugin.name}? This removes the plugin folder and its data.`)) return;
+    setBusy(plugin.id, true);
+    try {
+      await obsidianHost.disable(plugin.id);
+      await commands.uninstallPlugin(plugin.id);
+      setPlugins((current) => current.filter((item) => item.id !== plugin.id));
+      setInstallNotice(`Uninstalled ${plugin.name}`);
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : `Could not uninstall ${plugin.name}`);
+    } finally {
+      setBusy(plugin.id, false);
+    }
   }
 
   return (
@@ -146,8 +357,14 @@ export function PluginMarketplace() {
         </div>
       </header>
       {notice && (
-        <div className="mb-4 rounded-lg border border-emerald-300/25 bg-emerald-400/10 px-3 py-2 text-xs text-[var(--success)]">
-          {notice}
+        <div
+          className={`mb-4 rounded-lg border px-3 py-2 text-xs ${
+            notice.kind === "error"
+              ? "border-red-400/30 bg-red-500/10 text-[var(--danger)]"
+              : "border-emerald-300/25 bg-emerald-400/10 text-[var(--success)]"
+          }`}
+        >
+          {notice.message}
         </div>
       )}
 
@@ -168,6 +385,50 @@ export function PluginMarketplace() {
         <Button variant="primary" onClick={() => void importObsidianPlugins()}>
           Import plugins
         </Button>
+      </section>
+
+      <section className="card mb-6 p-4">
+        <div className="mb-3 flex items-center gap-3">
+          <div>
+            <div className="pixel-label text-[10px]">Installed plugins</div>
+            <h2 className="mt-1 text-lg font-semibold">
+              Installed in this vault <span className="mono text-[11px] text-[var(--text-4)]">({plugins.length})</span>
+            </h2>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {categories.map((category) => (
+              <button
+                key={category}
+                onClick={() => setFilter(category)}
+                className={`rounded-full px-3 py-1 text-[11px] transition ${
+                  filter === category
+                    ? "bg-violet/15 text-[var(--text)] shadow-[0_0_12px_rgba(139,124,255,0.22),inset_0_0_0_1px_rgba(169,155,255,0.24)]"
+                    : "bg-white/[0.02] text-[var(--text-2)] shadow-[inset_0_0_0_1px_rgba(139,124,255,0.12)] hover:shadow-[inset_0_0_0_1px_rgba(169,155,255,0.22)]"
+                }`}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+        </div>
+        {visible.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--text-3)]">
+            No plugins installed in this vault. Browse the community registry below or import an existing Obsidian vault.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+            {visible.map((plugin) => (
+              <PluginCard
+                key={plugin.id}
+                plugin={plugin}
+                busy={busyIds.has(plugin.id)}
+                onOpenPermissions={() => setModalPlugin(plugin)}
+                onToggleEnabled={(enabled) => void setPluginEnabled(plugin, enabled)}
+                onUninstall={() => void uninstallPlugin(plugin)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="card mb-6 p-4">
@@ -199,52 +460,34 @@ export function PluginMarketplace() {
             Load the public Obsidian community registry to install plugins directly into this vault.
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-2 xl:grid-cols-2 2xl:grid-cols-3">
-            {visibleCommunity.map((plugin) => (
-              <CommunityPluginRow
-                key={plugin.id}
-                plugin={plugin}
-                installed={installedIds.has(plugin.id)}
-                installing={installingIds.has(plugin.id)}
-                onInstall={() => void installCommunityPlugin(plugin)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="mb-2 text-[10px] uppercase tracking-[0.12em] text-[var(--text-3)]">
+              Showing {visibleCommunity.length} / {filteredCommunity.length} plugins
+            </div>
+            <div className="grid grid-cols-1 gap-2 xl:grid-cols-2 2xl:grid-cols-3">
+              {visibleCommunity.map((plugin) => {
+                const installedInfo = plugins.find((item) => item.id === plugin.id) ?? null;
+                return (
+                  <CommunityPluginRow
+                    key={plugin.id}
+                    plugin={plugin}
+                    installed={installedIds.has(plugin.id)}
+                    installedVersion={installedInfo?.version ?? null}
+                    installing={installingIds.has(plugin.id)}
+                    onInstall={() => void installCommunityPlugin(plugin)}
+                    onUpdate={() => void updateCommunityPlugin(plugin)}
+                  />
+                );
+              })}
+            </div>
+            {visibleCount < filteredCommunity.length && (
+              <div ref={sentinelRef} className="mt-3 py-3 text-center text-[10px] text-[var(--text-4)]">
+                Loading more plugins...
+              </div>
+            )}
+          </>
         )}
       </section>
-
-      <div className="mb-5 flex items-center gap-2">
-        {categories.map((category) => (
-          <button
-            key={category}
-            onClick={() => setFilter(category)}
-            className={`rounded-full px-3 py-1.5 text-xs transition ${
-              filter === category
-                ? "bg-violet/15 text-[var(--text)] shadow-[0_0_12px_rgba(139,124,255,0.22),inset_0_0_0_1px_rgba(169,155,255,0.24)]"
-                : "bg-white/[0.02] text-[var(--text-2)] shadow-[inset_0_0_0_1px_rgba(139,124,255,0.12)] hover:shadow-[inset_0_0_0_1px_rgba(169,155,255,0.22)]"
-            }`}
-          >
-            {category}
-          </button>
-        ))}
-        <span className="pixel-label ml-auto text-[10px]">{visible.length} plugins</span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-        {visible.map((plugin) => (
-          <PluginCard
-            key={plugin.id}
-            plugin={plugin}
-            onOpenPermissions={() => setModalPlugin(plugin)}
-            onToggleEnabled={(enabled) => void setPluginEnabled(plugin, enabled)}
-          />
-        ))}
-      </div>
-      {visible.length === 0 && (
-        <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--text-3)]">
-          No plugins installed in this vault.
-        </div>
-      )}
 
       {modalPlugin && (
         <PermissionModal
@@ -260,14 +503,20 @@ export function PluginMarketplace() {
 function CommunityPluginRow({
   plugin,
   installed,
+  installedVersion,
   installing,
   onInstall,
+  onUpdate,
 }: {
   plugin: ObsidianCommunityPlugin;
   installed: boolean;
+  installedVersion: string | null;
   installing: boolean;
   onInstall: () => void;
+  onUpdate: () => void;
 }) {
+  const handleClick = installed ? onUpdate : onInstall;
+  const buttonLabel = installing ? (installed ? "Updating..." : "Installing...") : installed ? "Update" : "Install";
   return (
     <div className="flex min-h-[104px] flex-col rounded-lg bg-white/[0.025] p-3 shadow-[inset_0_0_0_1px_rgba(139,124,255,0.08)]">
       <div className="flex items-start gap-2">
@@ -275,21 +524,37 @@ function CommunityPluginRow({
           <div className="truncate text-sm font-semibold">{plugin.name}</div>
           <div className="mono mt-0.5 truncate text-[10px] text-[var(--text-4)]">{plugin.id} / {plugin.author}</div>
         </div>
-        {installed && <span className="chip chip-success mono text-[9px]">installed</span>}
+        {installed && (
+          <span className="chip chip-success mono text-[9px]">
+            installed{installedVersion ? ` v${installedVersion}` : ""}
+          </span>
+        )}
       </div>
       <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--text-3)]">{plugin.description}</p>
       <div className="mt-auto flex items-center gap-2 pt-2">
         <span className="mono truncate text-[10px] text-[var(--text-4)]">{plugin.repo}</span>
         {typeof plugin.downloads === "number" && <span className="chip mono text-[9px]">{formatCompact(plugin.downloads)} downloads</span>}
-        <Button className="ml-auto py-1.5 text-[11px]" variant={installed ? "ghost" : "primary"} onClick={onInstall} disabled={installing}>
-          {installing ? "Installing..." : installed ? "Update" : "Install"}
+        <Button className="ml-auto py-1.5 text-[11px]" variant={installed ? "ghost" : "primary"} onClick={handleClick} disabled={installing}>
+          {buttonLabel}
         </Button>
       </div>
     </div>
   );
 }
 
-function PluginCard({ plugin, onOpenPermissions, onToggleEnabled }: { plugin: PluginInfo; onOpenPermissions: () => void; onToggleEnabled: (enabled: boolean) => void }) {
+function PluginCard({
+  plugin,
+  busy,
+  onOpenPermissions,
+  onToggleEnabled,
+  onUninstall,
+}: {
+  plugin: PluginInfo;
+  busy: boolean;
+  onOpenPermissions: () => void;
+  onToggleEnabled: (enabled: boolean) => void;
+  onUninstall: () => void;
+}) {
   const grantedCount = plugin.grantedPermissions.filter((grant) => grant.granted).length;
   return (
     <GlowCard className="flex min-h-[210px] flex-col p-5">
@@ -320,17 +585,19 @@ function PluginCard({ plugin, onOpenPermissions, onToggleEnabled }: { plugin: Pl
           </span>
         )}
       </div>
-      {plugin.compatibility.missingApiWarnings.length > 0 && (
-        <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] leading-4 text-amber-100/80">
-          <div className="mb-1 flex items-center gap-1 font-medium text-amber-100">
-            <AlertTriangle size={12} /> Missing API warnings
+      {plugin.compatibility.missingApiWarnings.length > 0 && !plugin.enabled && (
+        <details className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] leading-4 text-amber-100/80">
+          <summary className="flex cursor-pointer items-center gap-1 font-medium text-amber-100">
+            <AlertTriangle size={12} /> Compatibility notes ({plugin.compatibility.missingApiWarnings.length})
+          </summary>
+          <div className="mt-1 space-y-0.5">
+            {plugin.compatibility.missingApiWarnings.map((warning) => (
+              <div key={warning} className="truncate" title={warning}>
+                {warning}
+              </div>
+            ))}
           </div>
-          {plugin.compatibility.missingApiWarnings.slice(0, 2).map((warning) => (
-            <div key={warning} className="truncate">
-              {warning}
-            </div>
-          ))}
-        </div>
+        </details>
       )}
       <div className="mb-3 flex flex-wrap gap-1">
         {plugin.compatibility.requestedPermissions.map((permission) => {
@@ -348,11 +615,19 @@ function PluginCard({ plugin, onOpenPermissions, onToggleEnabled }: { plugin: Pl
         </span>
         {plugin.manifest.isDesktopOnly && <span className="chip chip-warning mono text-[9px]">DESKTOP API</span>}
         <span className="chip mono text-[9px]">{grantedCount} grants</span>
-        <Button className="py-1.5 text-[11px]" variant={plugin.enabled ? "ghost" : "primary"} onClick={() => onToggleEnabled(!plugin.enabled)}>
-          {plugin.enabled ? "Disable" : "Enable"}
+        <Button
+          className="py-1.5 text-[11px]"
+          variant={plugin.enabled ? "ghost" : "primary"}
+          onClick={() => onToggleEnabled(!plugin.enabled)}
+          disabled={busy}
+        >
+          {busy ? "..." : plugin.enabled ? "Disable" : "Enable"}
         </Button>
-        <Button className="ml-auto py-1.5 text-[11px]" onClick={onOpenPermissions}>
+        <Button className="ml-auto py-1.5 text-[11px]" onClick={onOpenPermissions} disabled={busy}>
           <Shield size={12} /> Permissions
+        </Button>
+        <Button className="py-1.5 text-[11px]" onClick={onUninstall} disabled={busy}>
+          <Trash2 size={12} /> Uninstall
         </Button>
       </div>
     </GlowCard>

@@ -3,17 +3,12 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PluginEcosystem {
+    #[default]
     Lattice,
     Obsidian,
-}
-
-impl Default for PluginEcosystem {
-    fn default() -> Self {
-        Self::Lattice
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,6 +1,7 @@
 import { Circle, Database, FileText } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { PluginElementView } from "@/components/plugins/PluginElementView";
-import { usePluginUIStore } from "@/stores/plugin-ui-store";
+import { usePluginUIStore, type PluginStatusContribution } from "@/stores/plugin-ui-store";
 import { useVaultStore } from "@/stores/vault-store";
 
 export function StatusBar() {
@@ -25,11 +26,28 @@ export function StatusBar() {
         {vault?.indexedPercent ?? 0}% indexed
       </span>
       {pluginStatusItems.map((item) => (
-        <span key={item.id} className="mono flex min-w-0 items-center gap-1.5 border-l border-[var(--border)] pl-3">
-          {item.element ? <PluginElementView element={item.element} /> : item.text}
-        </span>
+        <PluginStatusEntry key={item.id} item={item} />
       ))}
       <span className="mono ml-auto">{lastSavedAt ? `last save ${new Date(lastSavedAt).toLocaleTimeString()}` : "LATTICE v0.1.0"}</span>
     </footer>
+  );
+}
+
+function PluginStatusEntry({ item }: { item: PluginStatusContribution }) {
+  const hostRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !item.containerEl) return;
+    host.replaceChildren(item.containerEl);
+    return () => {
+      if (host.contains(item.containerEl!)) host.removeChild(item.containerEl!);
+    };
+  }, [item.containerEl]);
+
+  return (
+    <span className="mono flex min-w-0 items-center gap-1.5 border-l border-[var(--border)] pl-3">
+      {item.containerEl ? <span ref={hostRef} /> : item.element ? <PluginElementView element={item.element} /> : item.text}
+    </span>
   );
 }

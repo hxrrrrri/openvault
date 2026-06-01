@@ -230,6 +230,13 @@ export const commands = {
   readAssetDataUrl(path: string, basePath?: string | null) {
     return safeInvoke<string>("read_asset_data_url", { path, basePath });
   },
+  readVaultBinary(path: string) {
+    return safeInvoke<number[]>("read_vault_binary", { path });
+  },
+  writeVaultBinary(path: string, data: Uint8Array | number[]) {
+    const arr = data instanceof Uint8Array ? Array.from(data) : data;
+    return safeInvoke<boolean>("write_vault_binary", { path, data: arr });
+  },
   importAsset(request: {
     fileName: string;
     bytesBase64: string;
@@ -315,6 +322,9 @@ export const commands = {
   disablePlugin(id: string) {
     return safeInvoke<boolean>("disable_plugin", { id });
   },
+  uninstallPlugin(id: string) {
+    return safeInvoke<boolean>("uninstall_plugin", { id });
+  },
   readPluginRuntimeBundle(id: string) {
     return safeInvoke<PluginRuntimeBundle>("read_plugin_runtime_bundle", { id });
   },
@@ -329,6 +339,22 @@ export const commands = {
       id,
       permissions,
     });
+  },
+  requestUrl(input: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string | null;
+    contentType?: string | null;
+    pluginId?: string;
+  }) {
+    return safeInvoke<{
+      status: number;
+      text: string;
+      headers: Record<string, string>;
+      json: unknown;
+      arrayBuffer: number[] | null;
+    }>("plugin_request_url", { input });
   },
   listCollectionItems(query: CollectionQuery) {
     return safeInvoke<CollectionItem[]>("list_collection_items", { query });

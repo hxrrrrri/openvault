@@ -145,42 +145,20 @@ fn safe_child_path(folder: &Path, entry: &str) -> Result<PathBuf, PluginInstallE
     Ok(folder.join(relative))
 }
 
-fn compatibility_warnings(manifest: &PluginManifest, source: &str) -> Vec<String> {
+fn compatibility_warnings(_manifest: &PluginManifest, source: &str) -> Vec<String> {
     let mut warnings = Vec::new();
-    if manifest.is_desktop_only.unwrap_or(false) {
-        warnings.push(
-            "Desktop-only plugin: Node and filesystem adapters require explicit system grants."
-                .to_string(),
-        );
-    }
     if source.contains("require(\"electron\")")
         || source.contains("require('electron')")
         || source.contains("from \"electron\"")
         || source.contains("from 'electron'")
     {
-        warnings.push("Electron APIs are not exposed to Obsidian plugins by default.".to_string());
+        warnings.push(
+            "Uses Electron APIs — most internals are unavailable; main IPC may not work.".to_string(),
+        );
     }
-    if source.contains("require(\"fs\")")
-        || source.contains("require('fs')")
-        || source.contains("from \"fs\"")
-        || source.contains("from 'fs'")
+    if source.contains("require(\"child_process\")") || source.contains("require('child_process')")
     {
-        warnings.push(
-            "Node filesystem APIs are gated; prefer app.vault or request system:filesystem."
-                .to_string(),
-        );
-    }
-    if source.contains("requestUrl(") || source.contains("requestUrl:") {
-        warnings.push(
-            "requestUrl is treated as network access and requires an explicit network grant."
-                .to_string(),
-        );
-    }
-    if source.contains("ItemView") || source.contains("WorkspaceLeaf") {
-        warnings.push(
-            "Custom view APIs are partially shimmed; advanced workspace layouts may be limited."
-                .to_string(),
-        );
+        warnings.push("Spawns child processes — not supported in the sandbox.".to_string());
     }
     warnings.sort();
     warnings.dedup();

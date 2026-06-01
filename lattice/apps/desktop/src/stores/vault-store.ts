@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { FileNode, NoteContent, VaultInfo } from "@/types/domain";
 import { commands } from "@/lib/commands";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { getObsidianPluginHost } from "@/features/plugins/obsidian-host";
+import { emitHostEvent } from "@/features/plugins/host-events";
 
 const LAST_VAULT_KEY = "lattice.lastVaultPath";
 
@@ -49,6 +51,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       const files = await commands.listFiles();
       const tags = await commands.listTags().catch(() => []);
       set({ vault, files, tags, loading: false, initialized: true });
+      void autoLoadEnabledPlugins();
       const firstNote = firstMarkdownPath(files);
       if (firstNote) {
         await get().setActivePath(firstNote);
@@ -66,9 +69,15 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   async setActivePath(path) {
     set({ loading: true, activePath: path, error: null });
     useWorkspaceStore.getState().openTab(path, { activate: true });
+    emitHostEvent("workspace.active-leaf-change", { path });
+    if (isVirtualTabPath(path)) {
+      set({ activeNote: null, loading: false });
+      return;
+    }
     try {
       const note = await commands.readNote(path);
       set({ activeNote: note, loading: false });
+      emitHostEvent("workspace.file-open", { path, content: note.content });
     } catch (error) {
       set({
         activeNote: null,
@@ -84,6 +93,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     const files = await commands.listFiles();
     const tags = await commands.listTags().catch(() => []);
     set({ vault, files, tags, loading: false, initialized: true, activePath: null, activeNote: null });
+    void autoLoadEnabledPlugins();
     const firstNote = firstMarkdownPath(files);
     if (firstNote) await get().setActivePath(firstNote);
   },
@@ -120,11 +130,13 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     set({ saving: true });
     await commands.writeNote(activeNote.path, activeNote.content);
     set({ saving: false, lastSavedAt: new Date().toISOString() });
+    emitHostEvent("vault.modify", { path: activeNote.path });
     await get().refreshFiles();
   },
   async createNote(path, content) {
     try {
       const file = await commands.createNote(path, content);
+      emitHostEvent("vault.create", { path: file.path });
       await get().refreshFiles();
       await get().setActivePath(file.path);
     } catch (error) {
@@ -214,6 +226,26 @@ function flattenFiles(files: FileNode[]): FileNode[] {
 
 function normalizeComparable(value: string): string {
   return value.replace(/\\/g, "/").replace(/\.md$/i, "").toLowerCase();
+}
+
+export function isVirtualTabPath(path: string): boolean {
+  return path.startsWith("plugin-view://");
+}
+
+export function parsePluginViewPath(path: string): string | null {
+  if (!path.startsWith("plugin-view://")) return null;
+  return path.slice("plugin-view://".length);
+}
+
+async function autoLoadEnabledPlugins(): Promise<void> {
+  try {
+    const plugins = await commands.listPlugins();
+    const enabled = plugins.filter((plugin) => plugin.enabled && plugin.manifest.ecosystem === "obsidian");
+    if (enabled.length === 0) return;
+    await getObsidianPluginHost().enableMany(enabled);
+  } catch (error) {
+    console.warn("Plugin auto-load failed", error);
+  }
 }
 
 function isAlreadyExistsError(error: unknown): boolean {
