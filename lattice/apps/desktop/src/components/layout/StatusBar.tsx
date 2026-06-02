@@ -1,6 +1,7 @@
-import { Circle, Database, FileText } from "lucide-react";
+import { AlertTriangle, Circle, Database, FileText, Loader2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { PluginElementView } from "@/components/plugins/PluginElementView";
+import { useIndexingStatus } from "@/features/indexing/useIndexingStatus";
 import { usePluginUIStore, type PluginStatusContribution } from "@/stores/plugin-ui-store";
 import { useVaultStore } from "@/stores/vault-store";
 
@@ -10,6 +11,7 @@ export function StatusBar() {
   const lastSavedAt = useVaultStore((state) => state.lastSavedAt);
   const vault = useVaultStore((state) => state.vault);
   const pluginStatusItems = usePluginUIStore((state) => state.statusItems);
+  const { status: indexStatus, rebuild } = useIndexingStatus(vault?.path);
 
   return (
     <footer className="flex h-[26px] items-center gap-4 border-t border-[var(--border)] bg-[#08080c] px-3 text-[11px] text-[var(--text-3)]">
@@ -21,15 +23,79 @@ export function StatusBar() {
         <FileText size={12} />
         {activeNote?.wordCount ?? 0} words
       </span>
-      <span className="mono flex items-center gap-1.5">
-        <Database size={12} />
-        {vault?.indexedPercent ?? 0}% indexed
-      </span>
+      <IndexingIndicator status={indexStatus} onRebuild={rebuild} fallbackPercent={vault?.indexedPercent ?? 0} />
       {pluginStatusItems.map((item) => (
         <PluginStatusEntry key={item.id} item={item} />
       ))}
       <span className="mono ml-auto">{lastSavedAt ? `last save ${new Date(lastSavedAt).toLocaleTimeString()}` : "LATTICE v0.1.0"}</span>
     </footer>
+  );
+}
+
+function IndexingIndicator({
+  status,
+  onRebuild,
+  fallbackPercent,
+}: {
+  status: import("@/types/domain").IndexStatus | null;
+  onRebuild: () => void;
+  fallbackPercent: number;
+}) {
+  const phase = status?.phase ?? "idle";
+  const active = phase === "scanning" || phase === "indexing";
+  const failed = phase === "failed";
+  const stale = status?.stale ?? false;
+
+  if (active) {
+    const total = status?.total ?? 0;
+    const processed = status?.processed ?? 0;
+    const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+    return (
+      <span className="mono flex items-center gap-1.5 text-[var(--text-2)]" title={status?.message ?? "Indexing"}>
+        <Loader2 size={12} className="animate-spin" />
+        Indexing {total > 0 ? `${processed}/${total} (${pct}%)` : "…"}
+      </span>
+    );
+  }
+
+  if (failed) {
+    return (
+      <button
+        type="button"
+        onClick={onRebuild}
+        className="mono flex items-center gap-1.5 text-[var(--danger)] hover:underline"
+        title={status?.error ?? "Indexing failed — click to rebuild"}
+      >
+        <AlertTriangle size={12} />
+        Index error — rebuild
+      </button>
+    );
+  }
+
+  if (stale) {
+    return (
+      <button
+        type="button"
+        onClick={onRebuild}
+        className="mono flex items-center gap-1.5 text-[var(--warning)] hover:underline"
+        title="Index may be out of date — click to rebuild"
+      >
+        <AlertTriangle size={12} />
+        Index stale — rebuild
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onRebuild}
+      className="mono flex items-center gap-1.5 hover:text-[var(--text-2)]"
+      title="Index up to date — click to rebuild"
+    >
+      <Database size={12} />
+      {status?.lastSummary ? "Indexed" : `${fallbackPercent}% indexed`}
+    </button>
   );
 }
 

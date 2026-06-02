@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest a capability or improvement for LATTICE.
+title: "[feat]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that LATTICE makes hard or impossible?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should happen? Sketch the UX or API if relevant.
+    validations:
+      required: true
+  - type: input
+    id: obsidian-parity
+    attributes:
+      label: Obsidian parity?
+      description: If this matches an Obsidian feature, name it (helps us track the parity matrix).
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

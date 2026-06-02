@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::State;
 
-use crate::state::AppState;
+use crate::state::{AppState, PermissionAuditEntry};
 
 const OBSIDIAN_REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugins.json";
@@ -269,6 +269,36 @@ pub async fn update_plugin_permissions(
     state.update_plugin_permissions(id, permissions)
 }
 
+/// Permission-use audit log: every gated action a plugin attempted, with target
+/// and allow/deny outcome. Powers the security review UI.
+#[tauri::command]
+pub async fn get_permission_audit_log(
+    state: State<'_, AppState>,
+) -> Result<Vec<PermissionAuditEntry>, String> {
+    Ok(state.permission_audit_log())
+}
+
+/// Read a scoped secret for a plugin (requires the `secrets:read` grant).
+#[tauri::command]
+pub async fn read_plugin_secret(
+    id: String,
+    key: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    state.read_plugin_secret(&id, &key)
+}
+
+/// Write a scoped secret for a plugin (requires the `secrets:write` grant).
+#[tauri::command]
+pub async fn write_plugin_secret(
+    id: String,
+    key: String,
+    value: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state.write_plugin_secret(&id, &key, &value)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginRequestUrlInput {
@@ -309,12 +339,11 @@ pub async fn plugin_request_url(
         .as_deref()
         .map(|m| m.to_ascii_uppercase())
         .unwrap_or_else(|| "GET".to_string());
-    let mut builder = client
-        .request(
-            reqwest::Method::from_bytes(method.as_bytes())
-                .map_err(|error| format!("invalid HTTP method: {error}"))?,
-            &input.url,
-        );
+    let mut builder = client.request(
+        reqwest::Method::from_bytes(method.as_bytes())
+            .map_err(|error| format!("invalid HTTP method: {error}"))?,
+        &input.url,
+    );
     if let Some(headers) = input.headers.as_ref() {
         for (name, value) in headers {
             builder = builder.header(name.as_str(), value.as_str());

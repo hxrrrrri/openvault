@@ -1,11 +1,16 @@
-use regex::Regex;
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use crate::metadata::Tag;
 
+static TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(^|[^\w/])#([A-Za-z0-9][A-Za-z0-9_/-]*)").expect("valid tag regex")
+});
+
 pub fn extract_tags(content: &str) -> Vec<Tag> {
-    let tag_regex =
-        Regex::new(r"(^|[^\w/])#([A-Za-z0-9][A-Za-z0-9_/-]*)").expect("valid tag regex");
+    let tag_regex = &*TAG_RE;
     let mut tags = BTreeMap::new();
 
     for (line_index, line) in content.lines().enumerate() {

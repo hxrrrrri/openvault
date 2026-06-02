@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
@@ -33,7 +35,9 @@ pub fn parse_markdown(path: impl Into<String>, content: &str) -> NoteMetadata {
 }
 
 fn extract_headings(content: &str) -> Vec<Heading> {
-    let heading_regex = Regex::new(r"^(#{1,6})\s+(.+?)\s*$").expect("valid heading regex");
+    static HEADING_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+?)\s*$").expect("valid heading regex"));
+    let heading_regex = &*HEADING_RE;
     content
         .lines()
         .enumerate()
@@ -81,8 +85,9 @@ fn slugify(text: &str) -> String {
 }
 
 fn word_count(content: &str) -> usize {
-    let regex = Regex::new(r"[[:alnum:]']+").expect("valid word regex");
-    regex.find_iter(content).count()
+    static WORD_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"[[:alnum:]']+").expect("valid word regex"));
+    WORD_RE.find_iter(content).count()
 }
 
 fn excerpt(content: &str) -> String {
@@ -97,7 +102,10 @@ fn excerpt(content: &str) -> String {
         .collect()
 }
 
-fn content_hash(content: &str) -> String {
+/// SHA-256 of the raw note content. This is the same value stored in
+/// `files.content_hash`, so incremental indexing can hash a file on disk and
+/// compare against the cache without performing a full parse.
+pub fn content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     format!("{:x}", hasher.finalize())

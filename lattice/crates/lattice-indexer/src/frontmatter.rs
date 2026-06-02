@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 use serde_json::Value;
 
@@ -57,11 +59,17 @@ pub fn parse_properties(content: &str) -> Vec<Property> {
 }
 
 fn parse_inline_properties(content: &str) -> Vec<Property> {
+    static LINE_FIELD_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^\s*([A-Za-z][A-Za-z0-9 _-]{0,63})::\s*(.+?)\s*$")
+            .expect("valid inline property regex")
+    });
+    static BRACKET_FIELD_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\[([A-Za-z][A-Za-z0-9 _-]{0,63})::\s*([^\]]+?)\]")
+            .expect("valid bracket inline property regex")
+    });
     let (_, body) = split_frontmatter(content);
-    let line_field = Regex::new(r"^\s*([A-Za-z][A-Za-z0-9 _-]{0,63})::\s*(.+?)\s*$")
-        .expect("valid inline property regex");
-    let bracket_field = Regex::new(r"\[([A-Za-z][A-Za-z0-9 _-]{0,63})::\s*([^\]]+?)\]")
-        .expect("valid bracket inline property regex");
+    let line_field = &*LINE_FIELD_RE;
+    let bracket_field = &*BRACKET_FIELD_RE;
     let mut properties = Vec::new();
     let mut in_fence = false;
 

@@ -1,11 +1,19 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 
 use crate::metadata::{Link, LinkType};
 
+static WIKI_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(!)?\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]").expect("valid wikilink regex")
+});
+static MD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(!)?\[([^\]]*)\]\(([^)]+)\)").expect("valid markdown link regex")
+});
+
 pub fn extract_links(content: &str) -> Vec<Link> {
-    let wiki = Regex::new(r"(!)?\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]")
-        .expect("valid wikilink regex");
-    let md = Regex::new(r"(!)?\[([^\]]*)\]\(([^)]+)\)").expect("valid markdown link regex");
+    let wiki = &*WIKI_RE;
+    let md = &*MD_RE;
     let mut links = Vec::new();
 
     for (line_index, line) in content.lines().enumerate() {

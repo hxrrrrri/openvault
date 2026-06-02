@@ -4,13 +4,34 @@
   <img src="docs/assets/lattice-wordmark.png" alt="LATTICE - local-first Markdown knowledge graph" width="720" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/hxrrrrri/openvault/actions/workflows/ci.yml"><img src="https://github.com/hxrrrrri/openvault/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/hxrrrrri/openvault/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/typecheck-tsc--noEmit-blue" alt="Typecheck" /></a>
+  <a href="https://github.com/hxrrrrri/openvault/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-vitest-green" alt="Tests" /></a>
+  <a href="https://github.com/hxrrrrri/openvault/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/rust-cargo%20test-orange" alt="Rust tests" /></a>
+  <a href="https://github.com/hxrrrrri/openvault/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/lint-clippy%20%2B%20eslint-yellow" alt="Clippy" /></a>
+  <a href="https://github.com/hxrrrrri/openvault/actions/workflows/desktop-build.yml"><img src="https://github.com/hxrrrrri/openvault/actions/workflows/desktop-build.yml/badge.svg" alt="Desktop build" /></a>
+</p>
+
 LATTICE is an open-source, local-first Markdown knowledge graph IDE. It keeps Markdown files as the source of truth, builds a rebuildable SQLite metadata cache, renders backlinks and graph relationships, and runs a permission-first Obsidian-compatible plugin system.
 
 > Your files. Your graph. Your plugins. Your AI. No lock-in. No black box.
 
+## Project lives in `lattice/`
+
+This repository root holds documentation, design assets, and CI configuration. **The actual application — Rust crates, Tauri desktop shell, React frontend, and tests — lives in [`lattice/`](lattice/).** Run all build and test commands from there:
+
+```bash
+cd lattice
+pnpm install
+pnpm dev
+```
+
+The root is not a Node or Cargo workspace; do not run `pnpm`/`cargo` from it.
+
 ## Status
 
-Version `0.1.0` — active development toward Obsidian feature parity. Core vault, editor, graph, search, bookmarks, hotkeys, canvas format, and plugin runtime are complete.
+Version `0.1.0` — active, pre-release development toward Obsidian feature parity. This is **early software**: some features are complete and tested, others are partial or experimental. For an honest, source-backed breakdown of what works today versus what is in progress, see **[docs/status.md](docs/status.md)** and the [Obsidian parity matrix](lattice/docs/obsidian-parity-matrix.md).
 
 ## Features
 
@@ -90,7 +111,7 @@ Version `0.1.0` — active development toward Obsidian feature parity. Core vaul
 
 ## Screenshots
 
-Screenshots are intentionally left as placeholders until the desktop bundle is captured in CI.
+> **Screenshots pending.** No screenshots are bundled yet. They will be captured from the packaged desktop build in CI and committed under `docs/assets/screenshots/` before the `v0.1.0` tag. Until then this section is an intentional placeholder — there are no images to display.
 
 ## Tech Stack
 
@@ -142,12 +163,12 @@ The desktop shell is React + TypeScript inside Tauri. Rust owns vault access, in
 
 Markdown files remain the only durable source of note content. `.lattice/index.db` is a cache and can be rebuilt from files at any time.
 
-See [docs/architecture.md](docs/architecture.md) for details.
+See [lattice/docs/architecture.md](lattice/docs/architecture.md) for details.
 
 ## Security
 
-No telemetry enabled by default. Plugins are permissioned by design, AI providers are local-first, and external network access must be explicit. See [SECURITY.md](SECURITY.md).
+No telemetry enabled by default. Plugins are permissioned by design, AI providers are local-first, and external network access must be explicit. See [lattice/SECURITY.md](lattice/SECURITY.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [lattice/CONTRIBUTING.md](lattice/CONTRIBUTING.md).

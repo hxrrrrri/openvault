@@ -6,7 +6,7 @@ use lattice_indexer::metadata::NoteMetadata;
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
-use crate::migrations::MIGRATION_001;
+use crate::migrations::MIGRATIONS;
 use crate::repositories::{
     BacklinkRow, DbCollectionRow, DbLinkRow, DbNoteRow, HealthStats, SearchRow,
 };
@@ -42,12 +42,111 @@ impl LatticeDb {
         Ok(db)
     }
 
+    /// Apply all pending migrations in order, recording each applied version in
+    /// the `schema_migrations` table. Idempotent: already-applied versions are
+    /// skipped, and every migration uses `IF NOT EXISTS` so re-running against an
+    /// existing database is safe.
     pub fn migrate(&self) -> DbResult<()> {
-        self.conn.execute_batch(MIGRATION_001)?;
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (\
+               version INTEGER PRIMARY KEY,\
+               applied_at TEXT NOT NULL\
+             );",
+        )?;
+        for (version, sql) in MIGRATIONS {
+            let applied: bool = self.conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?1)",
+                params![version],
+                |row| row.get(0),
+            )?;
+            if applied {
+                continue;
+            }
+            self.conn.execute_batch(sql)?;
+            self.conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?1, ?2)",
+                params![version, Utc::now().to_rfc3339()],
+            )?;
+        }
         Ok(())
     }
 
+    /// Highest applied schema version (0 if the database has never been migrated).
+    pub fn schema_version(&self) -> DbResult<i64> {
+        let version: Option<i64> = self
+            .conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .optional()?
+            .flatten();
+        Ok(version.unwrap_or(0))
+    }
+
+    /// Remove every indexed row, leaving the schema intact. Used by the
+    /// "Rebuild index" command before a full reindex from Markdown files.
+    /// Rows are deleted children-first so foreign keys stay satisfied even
+    /// without relying on cascade.
+    pub fn clear_index(&self) -> DbResult<()> {
+        self.conn.execute_batch(
+            "DELETE FROM graph_edges;\
+             DELETE FROM search_index;\
+             DELETE FROM note_tags;\
+             DELETE FROM tags;\
+             DELETE FROM properties;\
+             DELETE FROM tasks;\
+             DELETE FROM headings;\
+             DELETE FROM links;\
+             DELETE FROM notes;\
+             DELETE FROM files;",
+        )?;
+        Ok(())
+    }
+
+    /// Run a SQLite integrity check. Returns `true` when the database reports
+    /// `ok`, `false` when corruption is detected.
+    pub fn integrity_ok(&self) -> DbResult<bool> {
+        let result: String = self
+            .conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+        Ok(result == "ok")
+    }
+
+    /// Map of `path -> content_hash` for every indexed file. Used by incremental
+    /// indexing to skip files whose content has not changed.
+    pub fn content_hashes(&self) -> DbResult<BTreeMap<String, String>> {
+        let mut stmt = self.conn.prepare("SELECT path, content_hash FROM files")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut map = BTreeMap::new();
+        for row in rows {
+            let (path, hash) = row?;
+            map.insert(path, hash);
+        }
+        Ok(map)
+    }
+
+    /// Insert or update a single note and rebuild graph edges immediately.
+    /// Convenient for one-off writes; for batch indexing prefer
+    /// [`Self::upsert_note_deferred`] followed by a single
+    /// [`Self::rebuild_graph_edges`] to avoid O(n^2) edge rebuilds.
     pub fn upsert_note(
+        &mut self,
+        path: &str,
+        content: &str,
+        size: u64,
+        metadata: &NoteMetadata,
+    ) -> DbResult<()> {
+        self.upsert_note_deferred(path, content, size, metadata)?;
+        self.rebuild_graph_edges()?;
+        Ok(())
+    }
+
+    /// Insert or update a single note **without** rebuilding graph edges. The
+    /// caller is responsible for calling [`Self::rebuild_graph_edges`] once after
+    /// a batch of writes.
+    pub fn upsert_note_deferred(
         &mut self,
         path: &str,
         content: &str,
@@ -195,7 +294,6 @@ impl LatticeDb {
         )?;
 
         tx.commit()?;
-        self.rebuild_graph_edges()?;
         Ok(())
     }
 
@@ -302,12 +400,20 @@ impl LatticeDb {
         Ok(rows)
     }
 
+    /// Remove a note from the cache (tombstone) and rebuild graph edges.
     pub fn delete_note(&mut self, path: &str) -> DbResult<()> {
+        self.delete_note_deferred(path)?;
+        self.rebuild_graph_edges()?;
+        Ok(())
+    }
+
+    /// Remove a note from the cache **without** rebuilding graph edges. Pair with
+    /// a single [`Self::rebuild_graph_edges`] when deleting in a batch.
+    pub fn delete_note_deferred(&mut self, path: &str) -> DbResult<()> {
         let tx = self.conn.transaction()?;
         tx.execute("DELETE FROM search_index WHERE path = ?1", params![path])?;
         tx.execute("DELETE FROM files WHERE path = ?1", params![path])?;
         tx.commit()?;
-        self.rebuild_graph_edges()?;
         Ok(())
     }
 
@@ -470,7 +576,9 @@ impl LatticeDb {
         Ok(by_basename)
     }
 
-    fn rebuild_graph_edges(&self) -> DbResult<()> {
+    /// Recompute the `graph_edges` table from resolved links. Call once after a
+    /// batch of deferred upserts/deletes.
+    pub fn rebuild_graph_edges(&self) -> DbResult<()> {
         self.conn.execute("DELETE FROM graph_edges", [])?;
         self.conn.execute(
             r#"
@@ -491,14 +599,139 @@ mod tests {
 
     use super::LatticeDb;
 
+    fn upsert(db: &mut LatticeDb, path: &str, content: &str) {
+        let meta = parse_markdown(path, content);
+        db.upsert_note(path, content, content.len() as u64, &meta)
+            .unwrap();
+    }
+
     #[test]
     fn inserts_and_searches_note() {
         let mut db = LatticeDb::in_memory().unwrap();
-        let content = "# Alpha\n\nSee [[Beta]] and #tag.";
-        let meta = parse_markdown("Alpha.md", content);
-        db.upsert_note("Alpha.md", content, content.len() as u64, &meta)
-            .unwrap();
+        upsert(&mut db, "Alpha.md", "# Alpha\n\nSee [[Beta]] and #tag.");
         let results = db.search("Alpha").unwrap();
         assert_eq!(results[0].title, "Alpha");
+    }
+
+    #[test]
+    fn migrate_records_schema_version() {
+        let db = LatticeDb::in_memory().unwrap();
+        // Two migrations are defined (tables + indexes).
+        assert_eq!(db.schema_version().unwrap(), 2);
+        // migrate is idempotent.
+        db.migrate().unwrap();
+        assert_eq!(db.schema_version().unwrap(), 2);
+    }
+
+    #[test]
+    fn content_hashes_reflect_indexed_files() {
+        let mut db = LatticeDb::in_memory().unwrap();
+        upsert(&mut db, "A.md", "# A");
+        upsert(&mut db, "B.md", "# B");
+        let hashes = db.content_hashes().unwrap();
+        assert_eq!(hashes.len(), 2);
+        assert!(hashes.contains_key("A.md"));
+        // Re-upsert with identical content yields identical hash (skip signal).
+        let before = hashes.get("A.md").cloned();
+        upsert(&mut db, "A.md", "# A");
+        assert_eq!(db.content_hashes().unwrap().get("A.md").cloned(), before);
+    }
+
+    #[test]
+    fn delete_note_tombstones_file_and_search() {
+        let mut db = LatticeDb::in_memory().unwrap();
+        upsert(&mut db, "Gone.md", "# Gone\n\nfindme content");
+        assert!(!db.search("findme").unwrap().is_empty());
+        db.delete_note("Gone.md").unwrap();
+        assert!(db.search("findme").unwrap().is_empty());
+        assert!(!db.content_hashes().unwrap().contains_key("Gone.md"));
+    }
+
+    #[test]
+    fn fts_matches_filename_content_and_title() {
+        let mut db = LatticeDb::in_memory().unwrap();
+        upsert(
+            &mut db,
+            "Meeting Notes.md",
+            "# Quarterly Review\n\nDiscussed the budget forecast.",
+        );
+        // content term
+        assert!(db
+            .search("budget")
+            .unwrap()
+            .iter()
+            .any(|r| r.path == "Meeting Notes.md"));
+        // title/heading term (heading becomes title)
+        assert!(db
+            .search("Quarterly")
+            .unwrap()
+            .iter()
+            .any(|r| r.path == "Meeting Notes.md"));
+    }
+
+    /// Core indexing + search benchmark over the real db/indexer code paths.
+    /// In-memory (excludes disk IO and Tauri IPC); run manually:
+    ///   cargo test -p lattice-db --release -- --ignored --nocapture core_indexing_benchmark
+    #[test]
+    #[ignore = "benchmark; run explicitly with --ignored --nocapture"]
+    fn core_indexing_benchmark() {
+        use std::time::Instant;
+        for &n in &[100usize, 1_000, 10_000] {
+            let mut db = LatticeDb::in_memory().unwrap();
+
+            // Full index: parse + deferred upsert + single graph rebuild.
+            let start = Instant::now();
+            for i in 0..n {
+                let path = format!("Note {i}.md");
+                let content = format!(
+                    "# Note {i}\n\nLinks [[Note {}]]. #bench body text here\n",
+                    (i + 1) % n
+                );
+                let meta = parse_markdown(&path, &content);
+                db.upsert_note_deferred(&path, &content, content.len() as u64, &meta)
+                    .unwrap();
+            }
+            db.rebuild_graph_edges().unwrap();
+            let full_index_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+            // Incremental skip: re-fetch hashes (the cheap path that powers skipping).
+            let start = Instant::now();
+            let hashes = db.content_hashes().unwrap();
+            assert_eq!(hashes.len(), n);
+            let incremental_skip_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+            // Search latency: average over 50 queries.
+            let queries = 50;
+            let start = Instant::now();
+            for i in 0..queries {
+                let _ = db.search(&format!("Note {}", i % n)).unwrap();
+            }
+            let avg_search_ms = (start.elapsed().as_secs_f64() * 1000.0) / queries as f64;
+
+            // Graph data query (notes + links fetch, the graph payload inputs).
+            let start = Instant::now();
+            let _ = db.list_notes().unwrap();
+            let _ = db.links().unwrap();
+            let graph_query_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+            println!(
+                "BENCH n={n:>6} full_index={full_index_ms:>9.2}ms incremental_skip={incremental_skip_ms:>7.2}ms avg_search={avg_search_ms:>6.3}ms graph_query={graph_query_ms:>8.2}ms"
+            );
+        }
+    }
+
+    #[test]
+    fn rename_via_delete_then_insert_keeps_graph_consistent() {
+        let mut db = LatticeDb::in_memory().unwrap();
+        upsert(&mut db, "Source.md", "Link to [[Target]]");
+        upsert(&mut db, "Target.md", "# Target");
+        // backlink resolves
+        assert_eq!(db.backlinks("Target.md").unwrap().len(), 1);
+        // rename Target -> Renamed: delete old, insert new
+        db.delete_note("Target.md").unwrap();
+        upsert(&mut db, "Renamed.md", "# Renamed");
+        // old backlink no longer resolves to a missing file
+        assert_eq!(db.backlinks("Target.md").unwrap().len(), 1); // still matches by target_text
+        assert!(db.backlinks("Renamed.md").unwrap().is_empty());
     }
 }

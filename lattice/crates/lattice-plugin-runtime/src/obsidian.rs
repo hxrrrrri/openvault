@@ -153,7 +153,8 @@ fn compatibility_warnings(_manifest: &PluginManifest, source: &str) -> Vec<Strin
         || source.contains("from 'electron'")
     {
         warnings.push(
-            "Uses Electron APIs — most internals are unavailable; main IPC may not work.".to_string(),
+            "Uses Electron APIs — most internals are unavailable; main IPC may not work."
+                .to_string(),
         );
     }
     if source.contains("require(\"child_process\")") || source.contains("require('child_process')")

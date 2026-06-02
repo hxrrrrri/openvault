@@ -1,0 +1,39 @@
+name: Plugin compatibility report
+description: An Obsidian-compatible plugin does not install, load, or work in LATTICE.
+title: "[plugin]: "
+labels: ["plugin-compat"]
+body:
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin name + repo
+      placeholder: dataview (blacksmithgu/obsidian-dataview)
+    validations:
+      required: true
+  - type: dropdown
+    id: level
+    attributes:
+      label: How far did it get?
+      options:
+        - Did not install
+        - Installed but would not enable/load
+        - Loaded but a feature is broken
+        - Works, but degraded vs Obsidian
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed vs expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: permissions
+    attributes:
+      label: Permissions requested / denied
+      description: Any permission prompts you saw, and what you allowed or denied.
+  - type: textarea
+    id: console
+    attributes:
+      label: Plugin console / error output
+      render: shell

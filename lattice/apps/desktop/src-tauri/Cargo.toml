@@ -27,6 +27,7 @@ lattice-graph = { path = "../../../crates/lattice-graph" }
 lattice-indexer = { path = "../../../crates/lattice-indexer" }
 lattice-plugin-runtime = { path = "../../../crates/lattice-plugin-runtime" }
 lattice-search = { path = "../../../crates/lattice-search" }
+notify = "6"
 serde.workspace = true
 serde_json.workspace = true
 portable-pty = "0.8"

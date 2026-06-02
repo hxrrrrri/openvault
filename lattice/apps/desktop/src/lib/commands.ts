@@ -9,6 +9,8 @@ import type {
   FileNode,
   GraphFilters,
   GraphPayload,
+  IndexStatus,
+  IndexingSummary,
   NoteContent,
   NoteMetadata,
   OutgoingLink,
@@ -26,13 +28,6 @@ import type {
 import { titleFromMarkdown } from "@/lib/utils";
 import { safeInvoke } from "@/lib/tauri";
 import { listPluginCommands } from "@/features/plugins/plugin-command-registry";
-
-interface IndexingSummary {
-  scannedFiles: number;
-  indexedFiles: number;
-  skippedFiles: number;
-  durationMs: number;
-}
 
 export interface ImportedAsset {
   path: string;
@@ -196,6 +191,18 @@ export const commands = {
   scanVault() {
     return safeInvoke<IndexingSummary>("scan_vault");
   },
+  getIndexingStatus() {
+    return safeInvoke<IndexStatus>("get_indexing_status");
+  },
+  cancelIndexing() {
+    return safeInvoke<boolean>("cancel_indexing");
+  },
+  startIndexing() {
+    return safeInvoke<boolean>("start_indexing");
+  },
+  rebuildIndex() {
+    return safeInvoke<IndexingSummary>("rebuild_index");
+  },
   listFiles() {
     return safeInvoke<FileNode[]>("list_files");
   },
@@ -339,6 +346,24 @@ export const commands = {
       id,
       permissions,
     });
+  },
+  getPermissionAuditLog() {
+    return safeInvoke<
+      Array<{
+        pluginId: string;
+        permission: string;
+        action: string;
+        target: string | null;
+        timestamp: string;
+        allowed: boolean;
+      }>
+    >("get_permission_audit_log");
+  },
+  readPluginSecret(id: string, key: string) {
+    return safeInvoke<string | null>("read_plugin_secret", { id, key });
+  },
+  writePluginSecret(id: string, key: string, value: string) {
+    return safeInvoke<boolean>("write_plugin_secret", { id, key, value });
   },
   requestUrl(input: {
     url: string;

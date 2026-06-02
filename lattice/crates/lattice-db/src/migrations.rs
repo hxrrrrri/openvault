@@ -126,3 +126,27 @@ CREATE TABLE IF NOT EXISTS workspace_state (
   updated_at TEXT NOT NULL
 );
 "#;
+
+/// Version 2: explicit indexes for the hot query paths used by search, graph
+/// generation, backlinks, and incremental reindexing.
+///
+/// Note: `files.path`, `tags.name`, and `tags.normalized_name` are declared
+/// `UNIQUE`, so SQLite already maintains covering indexes for them; we add the
+/// remaining non-unique paths here.
+pub const MIGRATION_002: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_files_basename ON files(basename);
+CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path);
+CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash);
+CREATE INDEX IF NOT EXISTS idx_links_source_file_id ON links(source_file_id);
+CREATE INDEX IF NOT EXISTS idx_links_resolved_file_id ON links(resolved_file_id);
+CREATE INDEX IF NOT EXISTS idx_links_target_text ON links(target_text);
+CREATE INDEX IF NOT EXISTS idx_headings_file_id ON headings(file_id);
+CREATE INDEX IF NOT EXISTS idx_note_tags_tag_id ON note_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_properties_file_id ON properties(file_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_file_id ON tasks(file_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source_file_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_file_id);
+"#;
+
+/// Ordered list of (version, sql) migrations applied by [`crate::LatticeDb::migrate`].
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002)];

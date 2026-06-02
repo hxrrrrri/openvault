@@ -1,0 +1,45 @@
+name: Performance issue
+description: LATTICE is slow, janky, or uses too much memory/CPU.
+title: "[perf]: "
+labels: ["performance"]
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: What is slow?
+      placeholder: Reindex takes 40s on a 10k-note vault; graph drops frames when panning.
+    validations:
+      required: true
+  - type: input
+    id: vault-size
+    attributes:
+      label: Vault size
+      placeholder: notes count, total MB, link density
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Startup
+        - Full reindex
+        - Incremental reindex
+        - Search latency
+        - Graph payload generation
+        - Graph rendering / FPS
+        - Editor typing
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Measurements
+      description: Timings, FPS, or `pnpm bench:vault` output if available.
+      render: shell
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware + OS
+      placeholder: M2 Air 16GB / macOS 14; or CPU/RAM + OS

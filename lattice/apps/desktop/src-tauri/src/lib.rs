@@ -23,6 +23,10 @@ pub fn run() {
             list_tags,
             scan_vault,
             watch_vault,
+            get_indexing_status,
+            cancel_indexing,
+            start_indexing,
+            rebuild_index,
             list_files,
             read_vault_binary,
             write_vault_binary,
@@ -71,6 +75,9 @@ pub fn run() {
             read_plugin_data,
             write_plugin_data,
             update_plugin_permissions,
+            get_permission_audit_log,
+            read_plugin_secret,
+            write_plugin_secret,
             plugin_request_url
         ])
         .run(tauri::generate_context!())

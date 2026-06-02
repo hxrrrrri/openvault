@@ -20,6 +20,35 @@ export interface VaultInfo {
   hasObsidianConfig: boolean;
 }
 
+export type IndexPhase =
+  | "idle"
+  | "scanning"
+  | "indexing"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
+export interface IndexingSummary {
+  scannedFiles: number;
+  indexedFiles: number;
+  skippedFiles: number;
+  createdFiles: number;
+  updatedFiles: number;
+  deletedFiles: number;
+  errors: string[];
+  durationMs: number;
+}
+
+export interface IndexStatus {
+  phase: IndexPhase;
+  processed: number;
+  total: number;
+  message?: string | null;
+  error?: string | null;
+  stale: boolean;
+  lastSummary?: IndexingSummary | null;
+}
+
 export interface NoteContent {
   path: string;
   title: string;

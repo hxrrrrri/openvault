@@ -1,13 +1,24 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 
 use crate::metadata::Task;
 
+static TASK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*[-*]\s+\[([ xX])\]\s+(.*)$").expect("valid task regex"));
+static BLOCK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\^([A-Za-z0-9_-]+)").expect("valid block id regex"));
+static DUE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bdue:(\d{4}-\d{2}-\d{2})\b").expect("valid due regex"));
+static PRIORITY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bpriority:([A-C]|high|medium|low)\b").expect("valid priority regex")
+});
+
 pub fn extract_tasks(content: &str) -> Vec<Task> {
-    let task_regex = Regex::new(r"^\s*[-*]\s+\[([ xX])\]\s+(.*)$").expect("valid task regex");
-    let block_regex = Regex::new(r"\^([A-Za-z0-9_-]+)").expect("valid block id regex");
-    let due_regex = Regex::new(r"\bdue:(\d{4}-\d{2}-\d{2})\b").expect("valid due regex");
-    let priority_regex =
-        Regex::new(r"\bpriority:([A-C]|high|medium|low)\b").expect("valid priority regex");
+    let task_regex = &*TASK_RE;
+    let block_regex = &*BLOCK_RE;
+    let due_regex = &*DUE_RE;
+    let priority_regex = &*PRIORITY_RE;
 
     content
         .lines()

@@ -8,6 +8,7 @@ import { StatusBar } from "@/components/layout/StatusBar";
 import { MobilePreview } from "@/components/mobile/MobilePreview";
 import { PluginNotices } from "@/components/plugins/PluginNotices";
 import { PluginRibbon } from "@/components/plugins/PluginRibbon";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { OnboardingScreen } from "@/features/onboarding/OnboardingScreen";
 import { Routes } from "@/app/routes";
@@ -90,7 +91,9 @@ export function App() {
             )}
 
             <main className="relative z-20 flex min-w-0 flex-1 flex-col overflow-hidden">
-              <Routes view={view} />
+              <ErrorBoundary key={view} label={`The ${view} view ran into a problem`}>
+                <Routes view={view} />
+              </ErrorBoundary>
             </main>
 
             {view === "workspace" &&
